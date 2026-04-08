@@ -55,20 +55,7 @@ const Home: NextPage = () => {
       const uploadedUrl = newBlob.url;
       setVideoSrc(uploadedUrl);
 
-      // 2. ローカルの episode.json を更新
-      const response = await fetch('/api/episode/update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ videoSrc: uploadedUrl }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update episode.json');
-      }
-
-      alert('動画のアップロードと設定の更新が完了しました！');
+      alert('動画のアップロードが完了しました！プレイヤーとレンダリング設定に反映されました。');
     } catch (error) {
       console.error('Upload failed:', error);
       alert('アップロードに失敗しました: ' + (error as Error).message);
