@@ -13,6 +13,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         // 今回はシンプルにするため制限なしで許可します。
         return {
           allowedContentTypes: ['video/mp4'],
+          addRandomSuffix: true,
           tokenPayload: JSON.stringify({
             // 追加の情報をトークンに埋め込むことが可能です
           }),
