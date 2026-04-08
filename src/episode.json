@@ -4,7 +4,10 @@
     "title": "宮古島で発達障害が44倍になった真実",
     "fps": 30,
     "durationInFrames": 1170,
-    "resolution": { "width": 1080, "height": 1920 }
+    "resolution": {
+      "width": 1080,
+      "height": 1920
+    }
   },
   "style": {
     "fontFamily": "源ノ角ゴシック Heavy",
@@ -17,19 +20,119 @@
     "captionFontSize": 72
   },
   "fixedTitle": "宮古島で発達障害が44倍に\nその真実とは？",
-  "videoSrc": "https://remotionlambda-useast1-9okgftsztm.s3.us-east-1.amazonaws.com/videos/test.mp4",
+  "videoSrc": "https://5rd0krh0qvfcp2cw.public.blob.vercel-storage.com/%E7%94%BB%E9%9D%A2%E9%8C%B2%E7%94%BB%202026-04-09%20000236.mp4",
   "segments": [
-    { "id": 1, "start": 0, "end": 120, "text": "宮古島で発達障害の出生率が44倍", "animation": "pop", "se": "pikon", "zoom": 1.0 },
-    { "id": 2, "start": 120, "end": 210, "text": "こんなニュースを耳にしたことは？", "animation": "instant", "zoom": 1.05, "zoomX": 0.1 },
-    { "id": 3, "start": 210, "end": 270, "text": "一体なぜ？", "animation": "pop", "se": "pikon", "zoom": 1.1, "zoomY": -0.1 },
-    { "id": 4, "start": 270, "end": 330, "text": "農薬？流行病？それとも血筋？", "animation": "instant", "highlight": true, "se": "dodon", "zoom": 1.0 },
-    { "id": 5, "start": 330, "end": 390, "text": "44倍と聞くと怖くなりますよね", "animation": "pop", "zoom": 1.05, "zoomX": -0.1 },
-    { "id": 6, "start": 390, "end": 450, "text": "しかし 安心してください", "animation": "pop", "color": "green", "se": "chan", "zoom": 1.0 },
-    { "id": 7, "start": 450, "end": 600, "text": "宮古島の人口は約8000人", "animation": "reveal", "zoom": 1.05 },
-    { "id": 8, "start": 600, "end": 750, "text": "発達障害の数は265人", "animation": "reveal", "zoom": 1.1, "zoomX": 0.05 },
-    { "id": 9, "start": 750, "end": 900, "text": "実は全国平均は6％", "animation": "instant", "se": "dodon", "zoom": 1.05 },
-    { "id": 10, "start": 900, "end": 990, "text": "宮古島の方が低いんです", "animation": "pop", "color": "green", "se": "quiz_correct", "zoom": 1.0 },
-    { "id": 11, "start": 990, "end": 1080, "text": "これは「数字のトリック」", "animation": "pop", "highlight": true, "color": "red", "se": "dodon", "zoom": 1.1 },
-    { "id": 12, "start": 1080, "end": 1170, "text": "元の数字が少なかっただけです", "animation": "instant", "zoom": 1.05 }
+    {
+      "id": 1,
+      "start": 0,
+      "end": 120,
+      "text": "宮古島で発達障害の出生率が44倍",
+      "animation": "pop",
+      "se": "pikon",
+      "zoom": 1
+    },
+    {
+      "id": 2,
+      "start": 120,
+      "end": 210,
+      "text": "こんなニュースを耳にしたことは？",
+      "animation": "instant",
+      "zoom": 1.05,
+      "zoomX": 0.1
+    },
+    {
+      "id": 3,
+      "start": 210,
+      "end": 270,
+      "text": "一体なぜ？",
+      "animation": "pop",
+      "se": "pikon",
+      "zoom": 1.1,
+      "zoomY": -0.1
+    },
+    {
+      "id": 4,
+      "start": 270,
+      "end": 330,
+      "text": "農薬？流行病？それとも血筋？",
+      "animation": "instant",
+      "highlight": true,
+      "se": "dodon",
+      "zoom": 1
+    },
+    {
+      "id": 5,
+      "start": 330,
+      "end": 390,
+      "text": "44倍と聞くと怖くなりますよね",
+      "animation": "pop",
+      "zoom": 1.05,
+      "zoomX": -0.1
+    },
+    {
+      "id": 6,
+      "start": 390,
+      "end": 450,
+      "text": "しかし 安心してください",
+      "animation": "pop",
+      "color": "green",
+      "se": "chan",
+      "zoom": 1
+    },
+    {
+      "id": 7,
+      "start": 450,
+      "end": 600,
+      "text": "宮古島の人口は約8000人",
+      "animation": "reveal",
+      "zoom": 1.05
+    },
+    {
+      "id": 8,
+      "start": 600,
+      "end": 750,
+      "text": "発達障害の数は265人",
+      "animation": "reveal",
+      "zoom": 1.1,
+      "zoomX": 0.05
+    },
+    {
+      "id": 9,
+      "start": 750,
+      "end": 900,
+      "text": "実は全国平均は6％",
+      "animation": "instant",
+      "se": "dodon",
+      "zoom": 1.05
+    },
+    {
+      "id": 10,
+      "start": 900,
+      "end": 990,
+      "text": "宮古島の方が低いんです",
+      "animation": "pop",
+      "color": "green",
+      "se": "quiz_correct",
+      "zoom": 1
+    },
+    {
+      "id": 11,
+      "start": 990,
+      "end": 1080,
+      "text": "これは「数字のトリック」",
+      "animation": "pop",
+      "highlight": true,
+      "color": "red",
+      "se": "dodon",
+      "zoom": 1.1
+    },
+    {
+      "id": 12,
+      "start": 1080,
+      "end": 1170,
+      "text": "元の数字が少なかっただけです",
+      "animation": "instant",
+      "zoom": 1.05
+    }
   ]
 }
