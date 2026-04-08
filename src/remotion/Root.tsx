@@ -1,12 +1,6 @@
 import { Composition } from "remotion";
-import {
-  COMP_NAME,
-  defaultMyCompProps,
-  DURATION_IN_FRAMES,
-  VIDEO_FPS,
-  VIDEO_HEIGHT,
-  VIDEO_WIDTH,
-} from "../../types/constants";
+import { COMP_NAME, CompositionProps, defaultMyCompProps } from "../../types/constants";
+import episode from "../episode.json";
 import { Main } from "./MyComp/Main";
 import { NextLogo } from "./MyComp/NextLogo";
 
@@ -16,11 +10,12 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id={COMP_NAME}
         component={Main}
-        durationInFrames={DURATION_IN_FRAMES}
-        fps={VIDEO_FPS}
-        width={VIDEO_WIDTH}
-        height={VIDEO_HEIGHT}
-        defaultProps={defaultMyCompProps}
+        durationInFrames={episode.meta.durationInFrames || 1200}
+        fps={episode.meta.fps || 30}
+        width={episode.meta.resolution.width || 1080}
+        height={episode.meta.resolution.height || 1920}
+        schema={CompositionProps}
+        defaultProps={{ ...defaultMyCompProps, ...episode } as any}
       />
       <Composition
         id="NextLogo"

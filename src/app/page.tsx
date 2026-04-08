@@ -4,27 +4,26 @@ import { Player } from "@remotion/player";
 import type { NextPage } from "next";
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import {
-  CompositionProps,
-  defaultMyCompProps,
-  DURATION_IN_FRAMES,
-  VIDEO_FPS,
-  VIDEO_HEIGHT,
-  VIDEO_WIDTH,
-} from "../../types/constants";
+import { CompositionProps, defaultMyCompProps } from "../../types/constants";
 import { RenderControls } from "../components/RenderControls";
 import { Spacing } from "../components/Spacing";
 import { Tips } from "../components/Tips";
 import { Main } from "../remotion/MyComp/Main";
+// @ts-ignore
+import episode from "../episode.json";
 
 const Home: NextPage = () => {
-  const [text, setText] = useState<string>(defaultMyCompProps.title);
+  const [text, setText] = useState<string>(episode.meta?.title || defaultMyCompProps.meta.title);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
     return {
-      title: text,
+      ...(episode as any),
+      meta: {
+        ...episode.meta,
+        title: text,
+      }
     };
-  }, [text]);
+  }, [text, episode]);
 
   return (
     <div>
@@ -33,13 +32,11 @@ const Home: NextPage = () => {
           <Player
             component={Main}
             inputProps={inputProps}
-            durationInFrames={DURATION_IN_FRAMES}
-            fps={VIDEO_FPS}
-            compositionHeight={VIDEO_HEIGHT}
-            compositionWidth={VIDEO_WIDTH}
+            durationInFrames={episode.meta?.durationInFrames || 1200}
+            fps={episode.meta?.fps || 30}
+            compositionHeight={episode.meta?.resolution?.height || 1920}
+            compositionWidth={episode.meta?.resolution?.width || 1080}
             style={{
-              // Can't use tailwind class for width since player's default styles take presedence over tailwind's,
-              // but not over inline styles
               width: "100%",
             }}
             controls
@@ -52,8 +49,6 @@ const Home: NextPage = () => {
           setText={setText}
           inputProps={inputProps}
         ></RenderControls>
-        <Spacing></Spacing>
-        <Spacing></Spacing>
         <Spacing></Spacing>
         <Spacing></Spacing>
         <Tips></Tips>

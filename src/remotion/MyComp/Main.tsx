@@ -1,58 +1,157 @@
-import { fontFamily, loadFont } from "@remotion/google-fonts/Inter";
 import {
   AbsoluteFill,
   Sequence,
-  spring,
+  staticFile,
+  Video,
+  interpolate,
   useCurrentFrame,
-  useVideoConfig,
+  Audio,
 } from "remotion";
 import { z } from "zod";
+import React from 'react';
 import { CompositionProps } from "../../../types/constants";
-import { NextLogo } from "./NextLogo";
-import { Rings } from "./Rings";
-import { TextFade } from "./TextFade";
 
-loadFont("normal", {
-  subsets: ["latin"],
-  weights: ["400", "700"],
-});
-export const Main = ({ title }: z.infer<typeof CompositionProps>) => {
+export const Main = (props: z.infer<typeof CompositionProps>) => {
+  const { fixedTitle, videoSrc, segments, style } = props;
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
 
-  const transitionStart = 2 * fps;
-  const transitionDuration = 1 * fps;
-
-  const logoOut = spring({
-    fps,
-    frame,
-    config: {
-      damping: 200,
-    },
-    durationInFrames: transitionDuration,
-    delay: transitionStart,
-  });
+  const vSrc = (videoSrc && videoSrc.trim() !== "") ? videoSrc : "test.mp4";
+  
+  // 現在のフレームに該当するセグメントを取得
+  const activeSegment = segments.find((s: any) => frame >= s.start && frame < s.end);
+  const zoom = activeSegment?.zoom ?? 1.0;
+  
+  // translate用のパーセンテージ計算 (e.g. 0.1 -> 10%)
+  const translateX = (activeSegment?.zoomX || 0) * 100;
+  const translateY = (activeSegment?.zoomY || 0) * 100;
 
   return (
-    <AbsoluteFill className="bg-white">
-      <Sequence durationInFrames={transitionStart + transitionDuration}>
-        <Rings outProgress={logoOut}></Rings>
-        <AbsoluteFill className="justify-center items-center">
-          <NextLogo outProgress={logoOut}></NextLogo>
-        </AbsoluteFill>
-      </Sequence>
-      <Sequence from={transitionStart + transitionDuration / 2}>
-        <TextFade>
-          <h1
-            className="text-[70px] font-bold"
-            style={{
-              fontFamily,
-            }}
-          >
-            {title}
-          </h1>
-        </TextFade>
-      </Sequence>
+    <AbsoluteFill className="bg-black" style={{ fontFamily: style.fontFamily }}>
+      {/* 背景動画（セグメントに応じて疑似マルチカメラのズーム/パン適用） */}
+      <AbsoluteFill style={{
+        transform: `scale(${zoom}) translate(${translateX}%, ${translateY}%)`,
+        transition: 'transform 0.1s linear'
+      }}>
+        {vSrc && (
+          <Video 
+            src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)} 
+            className="object-cover w-full h-full" 
+          />
+        )}
+      </AbsoluteFill>
+
+      {/* 上部固定タイトル */}
+      {fixedTitle && (
+        <div 
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            backgroundColor: style.titleBgColor,
+            color: style.titleTextColor,
+            fontSize: `${style.titleFontSize}px`,
+            fontWeight: 'bold',
+            textAlign: 'center',
+            padding: '40px 20px',
+            whiteSpace: 'pre-wrap',
+            zIndex: 10,
+            boxShadow: '0px 4px 10px rgba(0,0,0,0.1)'
+          }}
+        >
+          {fixedTitle.replace(/\\n/g, '\n').split('\n').map((line: string, i: number) => (
+            <React.Fragment key={i}>
+              {line}
+              <br />
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {/* セグメントごとの処理（テキストと効果音） */}
+      {segments.map((segment: any) => {
+        const isCenter = segment.position === "center";
+        
+        let textColor = style.mainTextColor;
+        let sColor = style.strokeColor;
+        if (segment.color === "green") {
+          textColor = "#63BFA0";
+        } else if (segment.color === "red") {
+          textColor = "#FF4444";
+        }
+
+        const fontSize = segment.highlight ? style.captionFontSize * 1.2 : style.captionFontSize;
+        const strokeWidth = segment.highlight ? style.strokeWidth * 1.5 : style.strokeWidth;
+
+        return (
+          <Sequence key={segment.id} from={segment.start} durationInFrames={Math.max(1, segment.end - segment.start)}>
+            {/* SE再生（none以外の場合） */}
+            {segment.se && segment.se !== "none" && (
+              <Audio src={staticFile(`se/${segment.se}.mp3`)} />
+            )}
+
+            <AbsoluteFill style={{
+              justifyContent: isCenter ? 'center' : 'flex-end',
+              alignItems: 'center',
+              paddingBottom: isCenter ? '0' : '250px',
+              zIndex: 20
+            }}>
+              <SegmentText 
+                segment={segment} 
+                localFrame={frame - segment.start}
+                fontSize={fontSize} 
+                textColor={textColor} 
+                strokeColor={sColor} 
+                strokeWidth={strokeWidth} 
+              />
+            </AbsoluteFill>
+          </Sequence>
+        );
+      })}
     </AbsoluteFill>
+  );
+};
+
+// セグメント単位のテキストコンポーネント（アニメーション制御用）
+const SegmentText: React.FC<{
+  segment: any, 
+  localFrame: number,
+  fontSize: number, 
+  textColor: string, 
+  strokeColor: string, 
+  strokeWidth: number
+}> = ({ segment, localFrame, fontSize, textColor, strokeColor, strokeWidth }) => {
+  let scale = 1;
+  let text = segment.text || "";
+
+  if (segment.animation === "pop") {
+    // 最初の8フレームで1.2倍から1.0倍へポップイン
+    scale = interpolate(localFrame, [0, 8], [1.2, 1], {
+      extrapolateRight: "clamp",
+      extrapolateLeft: "clamp",
+    });
+  } else if (segment.animation === "reveal") {
+    // 2フレームごとに1文字出現（カラオケ風）
+    const charsToShow = Math.max(1, Math.floor(localFrame / 2));
+    text = text.slice(0, charsToShow);
+  }
+
+  return (
+    <p style={({
+      fontSize: `${fontSize}px`,
+      color: textColor,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      WebkitTextStroke: `${strokeWidth}px ${strokeColor}`,
+      paintOrder: 'stroke fill',
+      textShadow: '0px 4px 15px rgba(0,0,0,0.5)',
+      transform: `scale(${scale})`,
+      whiteSpace: 'pre-wrap',
+      lineHeight: '1.4',
+      margin: 0,
+      padding: '0 40px'
+    }) as React.CSSProperties}>
+      {text}
+    </p>
   );
 };

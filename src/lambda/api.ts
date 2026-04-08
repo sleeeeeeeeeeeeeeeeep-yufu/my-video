@@ -39,7 +39,7 @@ export const renderVideo = async ({
     inputProps,
   };
 
-  return makeRequest<RenderMediaOnLambdaOutput>("/api/lambda/render", body);
+  return makeRequest<RenderMediaOnLambdaOutput>("/api/render", body);
 };
 
 export const getProgress = async ({
