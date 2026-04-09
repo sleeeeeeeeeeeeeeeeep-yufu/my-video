@@ -14,8 +14,9 @@ export const RenderControls: React.FC<{
   text: string;
   setText: React.Dispatch<React.SetStateAction<string>>;
   inputProps: z.infer<typeof CompositionProps>;
-}> = ({ text, setText, inputProps }) => {
-  const { renderMedia, state, undo } = useRendering(COMP_NAME, inputProps);
+  originalFileName?: string;
+}> = ({ text, setText, inputProps, originalFileName }) => {
+  const { renderMedia, state, undo } = useRendering(COMP_NAME, inputProps, originalFileName);
 
   return (
     <InputContainer>

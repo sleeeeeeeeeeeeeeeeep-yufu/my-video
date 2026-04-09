@@ -38,6 +38,7 @@ const wait = async (milliSeconds: number) => {
 export const useRendering = (
   id: string,
   inputProps: z.infer<typeof CompositionProps>,
+  originalFileName?: string,
 ) => {
   const [state, setState] = useState<State>({
     status: "init",
@@ -48,7 +49,7 @@ export const useRendering = (
       status: "invoking",
     });
     try {
-      const { renderId, bucketName } = await renderVideo({ id, inputProps });
+      const { renderId, bucketName } = await renderVideo({ id, inputProps, originalFileName });
       setState({
         status: "rendering",
         progress: 0,
@@ -100,7 +101,7 @@ export const useRendering = (
         renderId: null,
       });
     }
-  }, [id, inputProps]);
+  }, [id, inputProps, originalFileName]);
 
   const undo = useCallback(() => {
     setState({ status: "init" });

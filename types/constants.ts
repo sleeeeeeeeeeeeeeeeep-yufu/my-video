@@ -3,6 +3,7 @@ import { z } from "zod";
 export const COMP_NAME = "MyComp";
 
 export const CompositionProps = z.object({
+  version: z.string().default("2.0.0"),
   template: z.string().default("educational-short-v1"),
   meta: z.object({
     title: z.string().default(""),
@@ -13,7 +14,7 @@ export const CompositionProps = z.object({
       height: z.number().default(1920),
     }).default({ width: 1080, height: 1920 }),
   }).default({ title: "", fps: 30, durationInFrames: 1200, resolution: { width: 1080, height: 1920 } }),
-  style: z.object({
+  theme: z.object({
     fontFamily: z.string().default("Inter"),
     mainTextColor: z.string().default("#FFFFFF"),
     strokeColor: z.string().default("#63BFA0"),
@@ -32,11 +33,16 @@ export const CompositionProps = z.object({
     titleFontSize: 48,
     captionFontSize: 72,
   }),
+  audio: z.object({
+    bgm: z.string().nullable().default(null),
+    bgmVolume: z.number().default(0.1),
+  }).default({ bgm: null, bgmVolume: 0.1 }),
   fixedTitle: z.string().default(""),
   videoSrc: z.string().default(""),
   segments: z.array(
     z.object({
       id: z.number().default(0),
+      type: z.enum(["hook", "normal", "emphasis", "relief", "fact", "conclusion"]).default("normal"),
       start: z.number(),
       end: z.number(),
       text: z.string(),
@@ -53,6 +59,7 @@ export const CompositionProps = z.object({
 });
 
 export const defaultMyCompProps: z.infer<typeof CompositionProps> = {
+  version: "2.0.0",
   template: "educational-short-v1",
   meta: {
     title: "",
@@ -60,7 +67,7 @@ export const defaultMyCompProps: z.infer<typeof CompositionProps> = {
     durationInFrames: 1200,
     resolution: { width: 1080, height: 1920 },
   },
-  style: {
+  theme: {
     fontFamily: "sans-serif",
     mainTextColor: "#FFFFFF",
     strokeColor: "#63BFA0",
@@ -70,12 +77,15 @@ export const defaultMyCompProps: z.infer<typeof CompositionProps> = {
     titleFontSize: 48,
     captionFontSize: 72,
   },
+  audio: {
+    bgm: null,
+    bgmVolume: 0.1,
+  },
   fixedTitle: "",
   videoSrc: "",
   segments: [],
 };
 
-// これらはRoot側でepisode.jsonから上書きされますが、フォールバック用として残します
 export const DURATION_IN_FRAMES = 1200;
 export const VIDEO_WIDTH = 1080;
 export const VIDEO_HEIGHT = 1920;

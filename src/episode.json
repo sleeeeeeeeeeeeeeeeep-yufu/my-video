@@ -1,4 +1,5 @@
 {
+  "version": "2.0.0",
   "template": "educational-short-v1",
   "meta": {
     "title": "宮古島で発達障害が44倍になった真実",
@@ -9,7 +10,7 @@
       "height": 1920
     }
   },
-  "style": {
+  "theme": {
     "fontFamily": "源ノ角ゴシック Heavy",
     "mainTextColor": "#FFFFFF",
     "strokeColor": "#63BFA0",
@@ -19,11 +20,16 @@
     "titleFontSize": 48,
     "captionFontSize": 72
   },
+  "audio": {
+    "bgm": null,
+    "bgmVolume": 0.1
+  },
   "fixedTitle": "宮古島で発達障害が44倍に\nその真実とは？",
   "videoSrc": "https://5rd0krh0qvfcp2cw.public.blob.vercel-storage.com/%E7%94%BB%E9%9D%A2%E9%8C%B2%E7%94%BB%202026-04-09%20000236.mp4",
   "segments": [
     {
       "id": 1,
+      "type": "hook",
       "start": 0,
       "end": 120,
       "text": "宮古島で発達障害の出生率が44倍",
@@ -33,6 +39,7 @@
     },
     {
       "id": 2,
+      "type": "normal",
       "start": 120,
       "end": 210,
       "text": "こんなニュースを耳にしたことは？",
@@ -42,6 +49,7 @@
     },
     {
       "id": 3,
+      "type": "normal",
       "start": 210,
       "end": 270,
       "text": "一体なぜ？",
@@ -52,6 +60,7 @@
     },
     {
       "id": 4,
+      "type": "emphasis",
       "start": 270,
       "end": 330,
       "text": "農薬？流行病？それとも血筋？",
@@ -62,6 +71,7 @@
     },
     {
       "id": 5,
+      "type": "normal",
       "start": 330,
       "end": 390,
       "text": "44倍と聞くと怖くなりますよね",
@@ -71,6 +81,7 @@
     },
     {
       "id": 6,
+      "type": "relief",
       "start": 390,
       "end": 450,
       "text": "しかし 安心してください",
@@ -81,6 +92,7 @@
     },
     {
       "id": 7,
+      "type": "fact",
       "start": 450,
       "end": 600,
       "text": "宮古島の人口は約8000人",
@@ -89,6 +101,7 @@
     },
     {
       "id": 8,
+      "type": "fact",
       "start": 600,
       "end": 750,
       "text": "発達障害の数は265人",
@@ -98,6 +111,7 @@
     },
     {
       "id": 9,
+      "type": "fact",
       "start": 750,
       "end": 900,
       "text": "実は全国平均は6％",
@@ -107,6 +121,7 @@
     },
     {
       "id": 10,
+      "type": "relief",
       "start": 900,
       "end": 990,
       "text": "宮古島の方が低いんです",
@@ -117,6 +132,7 @@
     },
     {
       "id": 11,
+      "type": "emphasis",
       "start": 990,
       "end": 1080,
       "text": "これは「数字のトリック」",
@@ -128,6 +144,7 @@
     },
     {
       "id": 12,
+      "type": "conclusion",
       "start": 1080,
       "end": 1170,
       "text": "元の数字が少なかっただけです",

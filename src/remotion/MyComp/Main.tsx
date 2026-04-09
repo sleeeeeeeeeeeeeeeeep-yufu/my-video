@@ -12,7 +12,7 @@ import React from 'react';
 import { CompositionProps } from "../../../types/constants";
 
 export const Main = (props: z.infer<typeof CompositionProps>) => {
-  const { fixedTitle, videoSrc, segments, style } = props;
+  const { fixedTitle, videoSrc, segments, theme, audio } = props;
   const frame = useCurrentFrame();
 
   const vSrc = (videoSrc && videoSrc.trim() !== "") ? videoSrc : "test.mp4";
@@ -26,7 +26,12 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
   const translateY = (activeSegment?.zoomY || 0) * 100;
 
   return (
-    <AbsoluteFill className="bg-black" style={{ fontFamily: style.fontFamily }}>
+    <AbsoluteFill className="bg-black" style={{ fontFamily: theme.fontFamily }}>
+      {/* BGM 再生 */}
+      {audio.bgm && (
+        <Audio src={staticFile(`audio/${audio.bgm}.mp3`)} volume={audio.bgmVolume} loop />
+      )}
+
       {/* 背景動画（セグメントに応じて疑似マルチカメラのズーム/パン適用） */}
       <AbsoluteFill style={{
         transform: `scale(${zoom}) translate(${translateX}%, ${translateY}%)`,
@@ -48,9 +53,9 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
             top: 0,
             left: 0,
             width: '100%',
-            backgroundColor: style.titleBgColor,
-            color: style.titleTextColor,
-            fontSize: `${style.titleFontSize}px`,
+            backgroundColor: theme.titleBgColor,
+            color: theme.titleTextColor,
+            fontSize: `${theme.titleFontSize}px`,
             fontWeight: 'bold',
             textAlign: 'center',
             padding: '40px 20px',
@@ -72,16 +77,16 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
       {segments.map((segment: any) => {
         const isCenter = segment.position === "center";
         
-        let textColor = style.mainTextColor;
-        let sColor = style.strokeColor;
+        let textColor = theme.mainTextColor;
+        let sColor = theme.strokeColor;
         if (segment.color === "green") {
           textColor = "#63BFA0";
         } else if (segment.color === "red") {
           textColor = "#FF4444";
         }
 
-        const fontSize = segment.highlight ? style.captionFontSize * 1.2 : style.captionFontSize;
-        const strokeWidth = segment.highlight ? style.strokeWidth * 1.5 : style.strokeWidth;
+        const fontSize = segment.highlight ? theme.captionFontSize * 1.2 : theme.captionFontSize;
+        const strokeWidth = segment.highlight ? theme.strokeWidth * 1.5 : theme.strokeWidth;
 
         return (
           <Sequence key={segment.id} from={segment.start} durationInFrames={Math.max(1, segment.end - segment.start)}>

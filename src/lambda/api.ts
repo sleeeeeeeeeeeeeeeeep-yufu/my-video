@@ -4,7 +4,6 @@ import { CompositionProps } from "../../types/constants";
 import {
   ProgressRequest,
   ProgressResponse,
-  RenderRequest,
 } from "../../types/schema";
 import { ApiResponse } from "../helpers/api-response";
 
@@ -30,13 +29,16 @@ const makeRequest = async <Res>(
 export const renderVideo = async ({
   id,
   inputProps,
+  originalFileName,
 }: {
   id: string;
   inputProps: z.infer<typeof CompositionProps>;
+  originalFileName?: string;
 }) => {
-  const body: z.infer<typeof RenderRequest> = {
+  const body = {
     id,
     inputProps,
+    originalFileName: originalFileName || "output.mp4",
   };
 
   return makeRequest<RenderMediaOnLambdaOutput>("/api/render", body);

@@ -35,6 +35,7 @@ export const POST = async (req: Request) => {
     }
 
     const body = await req.json();
+    const originalFileName = body.originalFileName || "output.mp4";
     const clientInputProps = body.inputProps || {};
 
     // Minimize inputProps size by filtering segments for the frame range [0, 199]
@@ -64,7 +65,8 @@ export const POST = async (req: Request) => {
       privacy: "public",
       frameRange: [0, 199] as [number, number],
       downloadBehavior: {
-        type: "play-in-browser",
+        type: "download",
+        fileName: originalFileName,
       },
     });
 
