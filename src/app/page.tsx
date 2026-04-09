@@ -4,7 +4,6 @@ import { Player } from "@remotion/player";
 import type { NextPage } from "next";
 import { useMemo, useState, useRef } from "react";
 import { z } from "zod";
-import { upload } from "@vercel/blob/client";
 import { CompositionProps, defaultMyCompProps } from "../../types/constants";
 import { RenderControls } from "../components/RenderControls";
 import { Spacing } from "../components/Spacing";
@@ -47,25 +46,28 @@ const Home: NextPage = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
       setIsUploading(true);
       setUploadProgress(0);
-      const uuid = crypto.randomUUID();
-      const newFileName = `${uuid}.mp4`;
 
-      const newBlob = await upload(newFileName, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-        onUploadProgress: (progressEvent) => {
-          setUploadProgress(Math.round(progressEvent.percentage));
-        },
+      const formData = new FormData();
+      formData.append("file", file);
+
+      setUploadProgress(30);
+
+      const res = await fetch("/api/upload-s3", {
+        method: "POST",
+        body: formData,
       });
-      setVideoSrc(newBlob.url);
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setUploadProgress(100);
+      setVideoSrc(data.url);
       setOriginalFileName(file.name.replace(/\.[^/.]+$/, "") + ".mp4");
       alert("アップロード完了しました！");
     } catch (error) {
