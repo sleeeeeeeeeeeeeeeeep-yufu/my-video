@@ -2,7 +2,7 @@ import {
   AbsoluteFill,
   Sequence,
   staticFile,
-  Video,
+  OffthreadVideo,
   interpolate,
   useCurrentFrame,
   Audio,
@@ -38,7 +38,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
         transition: 'transform 0.1s linear'
       }}>
         {vSrc && (
-          <Video 
+          <OffthreadVideo 
             src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)} 
             className="object-cover w-full h-full" 
           />
