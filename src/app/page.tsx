@@ -55,7 +55,10 @@ const Home: NextPage = () => {
     try {
       setIsUploading(true);
       setUploadProgress(0);
-      const newBlob = await upload(file.name, file, {
+      const uuid = crypto.randomUUID();
+      const newFileName = `${uuid}.mp4`;
+
+      const newBlob = await upload(newFileName, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
         onUploadProgress: (progressEvent) => {
