@@ -7,9 +7,12 @@ import {
   useCurrentFrame,
   Audio,
 } from "remotion";
+import { loadDefaultJapaneseParser } from "budoux";
 import { z } from "zod";
 import React from 'react';
 import { CompositionProps } from "../../../types/constants";
+
+const parser = loadDefaultJapaneseParser();
 
 export const Main = (props: z.infer<typeof CompositionProps>) => {
   const { fixedTitle, videoSrc, segments, theme, audio } = props;
@@ -41,6 +44,9 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
           <OffthreadVideo 
             src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)} 
             className="object-cover w-full h-full" 
+            volume={1}
+            crossOrigin="anonymous"
+            pauseWhenBuffering
           />
         )}
       </AbsoluteFill>
@@ -59,14 +65,22 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
             fontWeight: 'bold',
             textAlign: 'center',
             padding: '40px 20px',
-            whiteSpace: 'pre-wrap',
+            whiteSpace: 'normal', // pre-wrapから変更（wbrを効かせるため）
+            wordBreak: 'keep-all',
+            overflowWrap: 'anywhere',
             zIndex: 10,
-            boxShadow: '0px 4px 10px rgba(0,0,0,0.1)'
+            boxShadow: '0px 4px 10px rgba(0,0,0,0.1)',
+            lineHeight: '1.3'
           }}
         >
           {fixedTitle.replace(/\\n/g, '\n').split('\n').map((line: string, i: number) => (
             <React.Fragment key={i}>
-              {line}
+              {parser.parse(line).map((phrase, j) => (
+                <React.Fragment key={j}>
+                  {phrase}
+                  <wbr />
+                </React.Fragment>
+              ))}
               <br />
             </React.Fragment>
           ))}
@@ -151,12 +165,19 @@ const SegmentText: React.FC<{
       paintOrder: 'stroke fill',
       textShadow: '0px 4px 15px rgba(0,0,0,0.5)',
       transform: `scale(${scale})`,
-      whiteSpace: 'pre-wrap',
+      whiteSpace: 'normal',
+      wordBreak: 'keep-all',
+      overflowWrap: 'anywhere',
       lineHeight: '1.4',
       margin: 0,
       padding: '0 40px'
     }) as React.CSSProperties}>
-      {text}
+      {parser.parse(text).map((phrase, i) => (
+        <React.Fragment key={i}>
+          {phrase}
+          <wbr />
+        </React.Fragment>
+      ))}
     </p>
   );
 };

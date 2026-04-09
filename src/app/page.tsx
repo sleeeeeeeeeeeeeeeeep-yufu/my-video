@@ -54,24 +54,58 @@ const Home: NextPage = () => {
       setIsUploading(true);
       setUploadProgress(0);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
-      setUploadProgress(30);
-
+      // 1. Get Presigned URL from our API
       const res = await fetch("/api/upload-s3", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type || "video/mp4",
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
+      // 2. Upload directly to S3 using XMLHttpRequest for progress tracking
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentage = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percentage);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response);
+          } else {
+            console.error("Upload failed with status:", xhr.status, xhr.responseText);
+            reject(new Error(`S3 upload failed with status ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          console.error("XHR error during upload");
+          reject(new Error("Network error during S3 upload. S3 CORS may be misconfigured."));
+        };
+
+        xhr.open("PUT", data.presignedUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+        xhr.send(file);
+      });
+
+      // 3. Complete
       setUploadProgress(100);
       setVideoSrc(data.url);
       setOriginalFileName(file.name.replace(/\.[^/.]+$/, "") + ".mp4");
       alert("アップロード完了しました！");
     } catch (error) {
+      console.error(error);
       alert("アップロードに失敗しました: " + (error as Error).message);
     } finally {
       setIsUploading(false);
@@ -159,7 +193,6 @@ const Home: NextPage = () => {
             compositionWidth={episode.meta?.resolution?.width || 1080}
             style={{ width: "100%" }}
             controls
-            autoPlay
             loop
           />
         </div>

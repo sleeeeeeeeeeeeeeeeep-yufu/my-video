@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
 
 const s3 = new S3Client({
@@ -11,29 +12,28 @@ const s3 = new S3Client({
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const { fileName, contentType } = await request.json();
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!fileName) {
+      return NextResponse.json({ error: "No fileName provided" }, { status: 400 });
     }
 
     const uuid = crypto.randomUUID();
-    const key = `uploads/${uuid}.mp4`;
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Maintain extension if possible, otherwise force mp4
+    const ext = fileName.split('.').pop() || 'mp4';
+    const key = `uploads/${uuid}.${ext}`;
 
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: process.env.REMOTION_BUCKET_NAME || "",
-        Key: key,
-        Body: buffer,
-        ContentType: "video/mp4",
-      })
-    );
+    const command = new PutObjectCommand({
+      Bucket: process.env.REMOTION_BUCKET_NAME || "",
+      Key: key,
+      ContentType: contentType || "video/mp4",
+    });
 
+    // Generate a pre-signed URL valid for 1 hour
+    const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
     const url = `https://${process.env.REMOTION_BUCKET_NAME}.s3.${process.env.REMOTION_APP_REGION || "us-east-1"}.amazonaws.com/${key}`;
 
-    return NextResponse.json({ url, originalFileName: file.name });
+    return NextResponse.json({ presignedUrl, url, originalFileName: fileName });
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message },
