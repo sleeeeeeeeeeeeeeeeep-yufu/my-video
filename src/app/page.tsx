@@ -29,6 +29,7 @@ const Home: NextPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
@@ -111,6 +112,40 @@ const Home: NextPage = () => {
     }
   };
 
+  const handleAnalyze = async () => {
+    if (!videoSrc) return;
+    setIsAnalyzing(true);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "動画を解析して構成案を自動生成しています。少々お待ちください..." },
+    ]);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: videoSrc }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (data.episodeJson) {
+        setInputEpisode(data.episodeJson);
+        if (data.episodeJson.meta?.title) {
+          setText(data.episodeJson.meta.title);
+        }
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成を行いました。" },
+        ]);
+      }
+    } catch (error) {
+      alert("解析に失敗しました: " + (error as Error).message);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+
   return (
     <div>
       <div className="max-w-screen-md m-auto mb-5 px-4">
@@ -161,6 +196,19 @@ const Home: NextPage = () => {
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
+          )}
+          {videoSrc && (
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className={`w-full mt-4 py-3 px-6 rounded-lg font-medium transition-all ${
+                isAnalyzing
+                  ? "bg-purple-100 text-purple-400 cursor-not-allowed"
+                  : "bg-purple-600 text-white hover:bg-purple-700 active:scale-95 shadow-md shadow-purple-200"
+              }`}
+            >
+              {isAnalyzing ? "AI解析中..." : "AIで動画を解析して構成を作る"}
+            </button>
           )}
         </div>
 

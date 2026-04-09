@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1026.0",
+    "@google/generative-ai": "^0.24.1",
     "@remotion/bundler": "4.0.445",
     "@remotion/cli": "4.0.445",
     "@remotion/google-fonts": "4.0.445",
