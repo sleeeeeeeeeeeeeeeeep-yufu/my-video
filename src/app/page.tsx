@@ -11,6 +11,7 @@ import { Tips } from "../components/Tips";
 import { Main } from "../remotion/MyComp/Main";
 // @ts-ignore
 import episode from "../episode.json";
+import { extractAudioFromVideo } from "../lib/audioUtils";
 
 type Message = {
   role: "user" | "assistant";
@@ -30,6 +31,7 @@ const Home: NextPage = () => {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
@@ -50,6 +52,7 @@ const Home: NextPage = () => {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setVideoFile(file); // Store file for analysis
     try {
       setIsUploading(true);
       setUploadProgress(0);
@@ -155,28 +158,38 @@ const Home: NextPage = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!videoSrc) return;
+    if (!videoSrc || !videoFile) return;
     setIsAnalyzing(true);
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "動画を解析しています。これには数分かかる場合があります..." },
+      { role: "assistant", content: "音声データを抽出中..." },
     ]);
     
     try {
-      // 1. ジョブを開始して ID を受け取る
+      // 1. クライアント側で音声を抽出 (Web Audio API)
+      const audioBlob = await extractAudioFromVideo(videoFile);
+      
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "音声の解析を開始しました。これには数分かかる場合があります..." },
+      ]);
+
+      // 2. 音声データを送信してジョブを開始
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "audio.wav");
+
       const startRes = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoUrl: videoSrc }),
+        body: formData, // FormData として音声ファイルを送信
       });
       const startData = await startRes.json();
       if (!startRes.ok) throw new Error(startData.error);
       
       const jobId = startData.jobId;
 
-      // 2. 完了するまで数秒おきにステータスをポーリングする
+      // 3. 完了するまで数秒おきにステータスをポーリングする
       while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+        await new Promise((resolve) => setTimeout(resolve, 3000));
 
         const statusRes = await fetch("/api/analyze/status", {
           method: "POST",
@@ -194,14 +207,13 @@ const Home: NextPage = () => {
             }
             setMessages((prev) => [
               ...prev,
-              { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成を行いました。" },
+              { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成が完了しました。" },
             ]);
           }
-          break; // ポーリング終了
+          break;
         } else if (statusData.status === "FAILED") {
-          throw new Error(statusData.error || "Geminiでの動画処理に失敗しました。");
+          throw new Error(statusData.error || "Geminiでの解析に失敗しました。");
         }
-        // status が PROCESSING の場合は何もしない（次のループへ）
       }
 
     } catch (error) {

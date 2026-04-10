@@ -14,34 +14,30 @@ const fileManager = new GoogleAIFileManager(apiKey);
 
 export async function POST(req: NextRequest) {
   try {
-    const { videoUrl } = await req.json();
+    const formData = await req.formData();
+    const audioFile = formData.get("audio") as File;
 
-    if (!videoUrl) {
-      return NextResponse.json({ error: "videoUrl is required" }, { status: 400 });
+    if (!audioFile) {
+      return NextResponse.json({ error: "audio file is required" }, { status: 400 });
     }
 
     const tempDir = os.tmpdir();
-    // use timestamp to avoid collision entirely
-    const tempFilePath = path.join(tempDir, `analyze-${Date.now()}-${crypto.randomUUID()}.mp4`);
+    const tempFilePath = path.join(tempDir, `analyze-${Date.now()}-${crypto.randomUUID()}.wav`);
     
-    // 1. S3等から動画を一時ファイルとしてダウンロード
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch video from URL: ${videoUrl}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
+    // 1. ArrayBuffer として読み込み、一時ファイルに保存
+    const arrayBuffer = await audioFile.arrayBuffer();
     fs.writeFileSync(tempFilePath, new Uint8Array(arrayBuffer));
 
     try {
-      // 2. Gemini File API へアップロード
+      // 2. Gemini File API へアップロード (audio/wav)
       const uploadResponse = await fileManager.uploadFile(tempFilePath, {
-        mimeType: "video/mp4",
-        displayName: "Analysis Video",
+        mimeType: "audio/wav",
+        displayName: "Analysis Audio",
       });
 
       const jobId = uploadResponse.file.name;
 
-      // 3. アップロード完了したら即座にIDを返す
+      // 3. ジョブIDを返す
       return NextResponse.json({ jobId });
 
     } finally {
