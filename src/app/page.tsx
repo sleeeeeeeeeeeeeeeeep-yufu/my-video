@@ -151,29 +151,53 @@ const Home: NextPage = () => {
     setIsAnalyzing(true);
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "動画を解析して構成案を自動生成しています。少々お待ちください..." },
+      { role: "assistant", content: "動画を解析しています。これには数分かかる場合があります..." },
     ]);
+    
     try {
-      const res = await fetch("/api/analyze", {
+      // 1. ジョブを開始して ID を受け取る
+      const startRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoUrl: videoSrc }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.error);
+      
+      const jobId = startData.jobId;
 
-      if (data.episodeJson) {
-        setInputEpisode(data.episodeJson);
-        if (data.episodeJson.meta?.title) {
-          setText(data.episodeJson.meta.title);
+      // 2. 完了するまで数秒おきにステータスをポーリングする
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+
+        const statusRes = await fetch("/api/analyze/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId, videoUrl: videoSrc }),
+        });
+        
+        const statusData = await statusRes.json();
+        
+        if (statusData.status === "COMPLETED") {
+          if (statusData.episodeJson) {
+            setInputEpisode(statusData.episodeJson);
+            if (statusData.episodeJson.meta?.title) {
+              setText(statusData.episodeJson.meta.title);
+            }
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成を行いました。" },
+            ]);
+          }
+          break; // ポーリング終了
+        } else if (statusData.status === "FAILED") {
+          throw new Error(statusData.error || "Geminiでの動画処理に失敗しました。");
         }
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成を行いました。" },
-        ]);
+        // status が PROCESSING の場合は何もしない（次のループへ）
       }
+
     } catch (error) {
-      alert("解析に失敗しました: " + (error as Error).message);
+      alert("解析中にエラーが発生しました: " + (error as Error).message);
     } finally {
       setIsAnalyzing(false);
     }
