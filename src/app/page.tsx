@@ -152,8 +152,10 @@ const Home: NextPage = () => {
     }
   };
 
-  const sendChatMessage = async (messageContent: string) => {
+  const sendChatMessage = async (messageContent: string, options?: { isPartial?: boolean }) => {
     if (!messageContent.trim()) return;
+    const { isPartial } = options || {};
+    
     const userMessage: Message = { role: "user", content: messageContent };
     setMessages((prev) => [...prev, userMessage]);
     setIsChatLoading(true);
@@ -163,21 +165,58 @@ const Home: NextPage = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: [...messages, userMessage],
-          currentEpisodeState: inputEpisode 
+          currentEpisodeState: inputEpisode,
+          isPartial
         }),
       });
       const data = await res.json();
+      
+      if (data.error) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `APIエラー: ${data.error}` },
+        ]);
+        return;
+      }
+
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.reply },
       ]);
+      
       if (data.episodeJson) {
-        setInputEpisode(data.episodeJson);
-        if (data.episodeJson.meta?.title) {
-          setText(data.episodeJson.meta.title);
+        // パーシャルアップデート（配列のみ）かフルアップデート（オブジェクト）かを判別してマージ
+        const isArray = Array.isArray(data.episodeJson);
+        const newSegments = isArray ? data.episodeJson : data.episodeJson.segments;
+
+        if (newSegments) {
+          setInputEpisode((prev: any) => ({
+            ...prev,
+            ...(isArray ? {} : data.episodeJson), // オブジェクトなら全体をマージ（theme等含む）
+            segments: newSegments, // 字幕リストを差し替え
+          }));
+          
+          // タイトルが含まれていれば反映
+          const newTitle = isArray ? null : data.episodeJson.meta?.title;
+          if (newTitle) {
+            setText(newTitle);
+          }
+        } else if (!isArray) {
+          // segmentsが含まれないオブジェクト（テーマ変更のみ等）の場合
+          setInputEpisode((prev: any) => ({
+            ...prev,
+            ...data.episodeJson
+          }));
         }
+      } else {
+        // AIがJSONを返さなかった場合
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "（※データの更新は行われませんでした。もう一度詳しく指示してみてください）" },
+        ]);
       }
-    } catch {
+    } catch (error) {
+      console.error("Chat error:", error);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "エラーが発生しました。" },
@@ -212,7 +251,7 @@ const Home: NextPage = () => {
         const text = e.target?.result as string;
         if (text) {
           const prompt = `以下の台本テキストを元に、字幕セグメントを構成・校正してください。\n\n【台本】\n${text}`;
-          await sendChatMessage(prompt);
+          await sendChatMessage(prompt, { isPartial: true });
         }
       } catch (error) {
         console.error("Script process error:", error);
