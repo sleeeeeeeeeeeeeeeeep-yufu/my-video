@@ -2,6 +2,8 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
 
+export const dynamic = 'force-dynamic';
+
 const s3 = new S3Client({
   region: process.env.REMOTION_APP_REGION || "us-east-1",
   credentials: {
@@ -12,14 +14,29 @@ const s3 = new S3Client({
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const { fileName, contentType } = await request.json();
+    // ログを出力してVercel上で確認できるようにする
+    console.log("Starting get-signed-url request");
+    
+    const body = await request.text();
+    if (!body) {
+      throw new Error("Empty request body");
+    }
+
+    let fileName, contentType;
+    try {
+      const parsed = JSON.parse(body);
+      fileName = parsed.fileName;
+      contentType = parsed.contentType;
+    } catch (e) {
+      console.error("Failed to parse request JSON:", body);
+      throw new Error("Invalid JSON body in request");
+    }
 
     if (!fileName) {
       return NextResponse.json({ error: "No fileName provided" }, { status: 400 });
     }
 
     const uuid = crypto.randomUUID();
-    // Maintain extension if possible, otherwise force mp4
     const ext = fileName.split('.').pop() || 'mp4';
     const key = `uploads/${uuid}.${ext}`;
 
@@ -29,12 +46,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       ContentType: contentType || "video/mp4",
     });
 
-    // Generate a pre-signed URL valid for 1 hour
     const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
     const url = `https://${process.env.REMOTION_BUCKET_NAME}.s3.${process.env.REMOTION_APP_REGION || "us-east-1"}.amazonaws.com/${key}`;
 
+    console.log("Successfully generated presigned URL for key:", key);
+
     return NextResponse.json({ presignedUrl, url, originalFileName: fileName });
   } catch (error) {
+    console.error("get-signed-url API Error:", error);
     return NextResponse.json(
       { error: (error as Error).message },
       { status: 500 }

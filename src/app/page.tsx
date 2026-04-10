@@ -55,7 +55,7 @@ const Home: NextPage = () => {
       setUploadProgress(0);
 
       // 1. Get Presigned URL from our API
-      const res = await fetch("/api/upload-s3", {
+      const res = await fetch("/api/get-signed-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -66,8 +66,16 @@ const Home: NextPage = () => {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const responseText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Non-JSON response from server:", responseText);
+        throw new Error(`Server returned non-JSON response (Status: ${res.status}). Payload: ${responseText.slice(0, 100)}...`);
+      }
+
+      if (!res.ok) throw new Error(data.error || "Unknown server error");
 
       // 2. Upload directly to S3 using XMLHttpRequest for progress tracking
       await new Promise((resolve, reject) => {
