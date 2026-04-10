@@ -38,16 +38,13 @@ export const POST = async (req: Request) => {
     const originalFileName = body.originalFileName || "output.mp4";
     const clientInputProps = body.inputProps || {};
 
-    // Minimize inputProps size by filtering segments for the frame range [0, 199]
-    // Uses 'start' field according to the new episode.json schema
-    const filteredSegments = (clientInputProps.segments || []).filter(
-      (s: any) => typeof s.start === 'number' && s.start <= 199
-    );
-
+    // 制限を解除し全セグメントをそのまま渡す（必要なら将来的に圧縮等の対応を行う）
     const inputProps = {
       ...clientInputProps,
-      segments: filteredSegments,
     };
+
+    // 動的に durationInFrames を取得 (未指定ならデフォルト値)
+    const durationInFrames = clientInputProps.meta?.durationInFrames || 1200;
 
     const result = await renderMediaOnLambda({
       codec: "h264",
@@ -63,7 +60,7 @@ export const POST = async (req: Request) => {
       framesPerLambda: 200,
       concurrencyPerLambda: 1,
       privacy: "public",
-      frameRange: [0, 199] as [number, number],
+      frameRange: [0, Math.max(0, durationInFrames - 1)] as [number, number],
       downloadBehavior: {
         type: "download",
         fileName: originalFileName,

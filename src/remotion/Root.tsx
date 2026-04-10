@@ -1,8 +1,18 @@
-import { Composition } from "remotion";
+import { Composition, CalculateMetadataFunction } from "remotion";
+import { z } from "zod";
 import { COMP_NAME, CompositionProps, defaultMyCompProps } from "../../types/constants";
 import episode from "../episode.json";
 import { Main } from "./MyComp/Main";
 import { NextLogo } from "./MyComp/NextLogo";
+
+const calculateMetadata: CalculateMetadataFunction<z.infer<typeof CompositionProps>> = ({ props }) => {
+  return {
+    durationInFrames: props.meta?.durationInFrames || 1200,
+    fps: props.meta?.fps || 30,
+    width: props.meta?.resolution?.width || 1080,
+    height: props.meta?.resolution?.height || 1920,
+  };
+};
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -16,6 +26,7 @@ export const RemotionRoot: React.FC = () => {
         height={episode.meta.resolution.height || 1920}
         schema={CompositionProps}
         defaultProps={{ ...defaultMyCompProps, ...episode } as any}
+        calculateMetadata={calculateMetadata}
       />
       <Composition
         id="NextLogo"

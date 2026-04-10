@@ -18,7 +18,7 @@ const fileManager = new GoogleAIFileManager(apiKey);
  * Geminiの解析結果をepisode.jsonのセグメント形式に変換する
  */
 const convertToSegments = (analysisResult: any) => {
-  const { speech, fillers } = analysisResult;
+  const { speech } = analysisResult;
   if (!speech) return [];
 
   const segments: any[] = [];
@@ -29,57 +29,19 @@ const convertToSegments = (analysisResult: any) => {
     let endSec = s.end;
     let text = s.text;
 
-    const overlappingFillers = (fillers || []).filter(
-      (f: any) => f.timestamp >= startSec && f.timestamp <= endSec
-    );
-
-    if (overlappingFillers.length === 0) {
-      segments.push({
-        id: currentId++,
-        type: s.type || "normal",
-        start: Math.round(startSec * FPS),
-        end: Math.round(endSec * FPS),
-        text: text,
-        animation: s.animation || "pop",
-        position: "bottom",
-        zoom: 1.0,
-        se: s.se || "none",
-      });
-    } else {
-      let lastStart = startSec;
-      overlappingFillers.sort((a: any, b: any) => a.timestamp - b.timestamp);
-
-      overlappingFillers.forEach((f: any) => {
-        if (f.timestamp - lastStart > 0.5) {
-          segments.push({
-            id: currentId++,
-            type: s.type || "normal",
-            start: Math.round(lastStart * FPS),
-            end: Math.round((f.timestamp - 0.1) * FPS),
-            text: text,
-            animation: "pop",
-            position: "bottom",
-            zoom: 1.0,
-            se: "none",
-          });
-        }
-        lastStart = f.timestamp + 0.3;
-      });
-
-      if (endSec - lastStart > 0.5) {
-        segments.push({
-          id: currentId++,
-          type: s.type || "normal",
-          start: Math.round(lastStart * FPS),
-          end: Math.round(endSec * FPS),
-          text: text,
-          animation: "pop",
-          position: "bottom",
-          zoom: 1.0,
-          se: "none",
-        });
-      }
-    }
+    // フィラーによる手動の細切れ分割を廃止し、Geminiが抽出した区間をそのまま活かす
+    // （同じテキストが何度も複製されてアニメーションが壊れるのを防ぐため）
+    segments.push({
+      id: currentId++,
+      type: s.type || "normal",
+      start: Math.round(startSec * FPS),
+      end: Math.round(endSec * FPS),
+      text: text,
+      animation: s.animation || "pop",
+      position: "bottom",
+      zoom: 1.0,
+      se: s.se || "none",
+    });
   });
 
   return segments;

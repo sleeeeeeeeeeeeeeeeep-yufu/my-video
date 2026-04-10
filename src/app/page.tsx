@@ -18,6 +18,19 @@ type Message = {
   content: string;
 };
 
+const getVideoDuration = (file: File): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      window.URL.revokeObjectURL(video.src);
+      resolve(video.duration);
+    };
+    video.onerror = () => reject(new Error("Failed to load video metadata"));
+    video.src = window.URL.createObjectURL(file);
+  });
+};
+
 const Home: NextPage = () => {
   const [inputEpisode, setInputEpisode] = useState<any>(episode);
   const [text, setText] = useState<string>(
@@ -54,6 +67,19 @@ const Home: NextPage = () => {
     if (!file) return;
     setVideoFile(file); // Store file for analysis
     try {
+      // 動画の実際の長さを取得して反映
+      const durationSeconds = await getVideoDuration(file);
+      const fps = episode.meta?.fps || 30;
+      const computedDurationFrames = Math.max(1, Math.round(durationSeconds * fps));
+
+      setInputEpisode((prev: any) => ({
+        ...prev,
+        meta: {
+          ...prev.meta,
+          durationInFrames: computedDurationFrames
+        }
+      }));
+
       setIsUploading(true);
       setUploadProgress(0);
 
@@ -201,7 +227,14 @@ const Home: NextPage = () => {
         
         if (statusData.status === "COMPLETED") {
           if (statusData.episodeJson) {
-            setInputEpisode(statusData.episodeJson);
+            setInputEpisode((prev: any) => ({
+              ...statusData.episodeJson,
+              meta: {
+                ...statusData.episodeJson.meta,
+                // 解析APIの固定値で上書きされないようにクライアントの長さを保持
+                durationInFrames: prev.meta?.durationInFrames || statusData.episodeJson.meta?.durationInFrames
+              }
+            }));
             if (statusData.episodeJson.meta?.title) {
               setText(statusData.episodeJson.meta.title);
             }
@@ -231,8 +264,8 @@ const Home: NextPage = () => {
           <Player
             component={Main}
             inputProps={inputProps}
-            durationInFrames={episode.meta?.durationInFrames || 1200}
-            fps={episode.meta?.fps || 30}
+            durationInFrames={inputProps.meta?.durationInFrames || 1200}
+            fps={inputProps.meta?.fps || 30}
             compositionHeight={episode.meta?.resolution?.height || 1920}
             compositionWidth={episode.meta?.resolution?.width || 1080}
             style={{ width: "100%" }}
