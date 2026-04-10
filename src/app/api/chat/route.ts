@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import currentEpisode from "../../../episode.json";
 
 export async function POST(req: NextRequest) {
-  const { messages } = await req.json();
+  const { messages, currentEpisodeState } = await req.json();
+
+  // クライアントで保持している最新状態があればそれを使用し、なければ静的ファイルを使用する
+  const baseEpisode = currentEpisodeState || currentEpisode;
 
   const systemPrompt = `
 あなたはショート動画の編集AIアシスタントです。
 ユーザーの指示を受けて、以下のepisode.jsonを編集して返してください。
 
 【現在のepisode.json】
-${JSON.stringify(currentEpisode, null, 2)}
+${JSON.stringify(baseEpisode, null, 2)}
 
 【ルール】
 1. ユーザーの指示に従ってepisode.jsonを編集する
@@ -23,6 +26,9 @@ JSON:（編集したepisode.json全体をここに書く）
 5. segmentsのtypeは hook / normal / emphasis / fact / relief / conclusion のいずれかにする
 6. animationは pop / reveal / instant のいずれかにする
 7. seは dodon / quiz_correct / chan / pikon のいずれか、不要なら省略する
+8. もしユーザーから「台本」が与えられた場合、以下のルールを厳守すること：
+   - すでに解析済みの細かい segments (開始・終了タイミングがあるもの) が存在する場合は、そのタイミング構造を極力維持し、テキストだけを台本の正確な字句に修正・統合してください。むやみに統合してタイミングを破壊しないでください。
+   - もしまだセグメントがほとんど無い（または初期状態）の場合は、台本から自然な区切り（1セグメントあたり3〜5秒）を推定し、新しく segments を生成してください。
 `;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {

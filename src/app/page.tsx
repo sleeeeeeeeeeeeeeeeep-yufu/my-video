@@ -43,9 +43,11 @@ const Home: NextPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isScriptLoading, setIsScriptLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scriptInputRef = useRef<HTMLInputElement>(null);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
     return {
@@ -150,17 +152,19 @@ const Home: NextPage = () => {
     }
   };
 
-  const handleChatSend = async () => {
-    if (!chatInput.trim()) return;
-    const userMessage: Message = { role: "user", content: chatInput };
+  const sendChatMessage = async (messageContent: string) => {
+    if (!messageContent.trim()) return;
+    const userMessage: Message = { role: "user", content: messageContent };
     setMessages((prev) => [...prev, userMessage]);
-    setChatInput("");
     setIsChatLoading(true);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...messages, userMessage] }),
+        body: JSON.stringify({ 
+          messages: [...messages, userMessage],
+          currentEpisodeState: inputEpisode 
+        }),
       });
       const data = await res.json();
       setMessages((prev) => [
@@ -181,6 +185,44 @@ const Home: NextPage = () => {
     } finally {
       setIsChatLoading(false);
     }
+  };
+
+  const handleChatSend = () => {
+    sendChatMessage(chatInput);
+    setChatInput("");
+  };
+
+  const handleScriptUploadClick = () => {
+    scriptInputRef.current?.click();
+  };
+
+  const handleScriptFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setIsScriptLoading(true);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: `台本「${file.name}」を読み込んでいます...テキストに基づいて構成を行います。` },
+    ]);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (text) {
+        const prompt = `以下の台本テキストを元に、字幕セグメントを構成・校正してください。\n\n【台本】\n${text}`;
+        await sendChatMessage(prompt);
+      }
+      setIsScriptLoading(false);
+      if (scriptInputRef.current) {
+         scriptInputRef.current.value = "";
+      }
+    };
+    reader.onerror = () => {
+      alert("ファイルの読み込みに失敗しました。");
+      setIsScriptLoading(false);
+    };
+    reader.readAsText(file);
   };
 
   const handleAnalyze = async () => {
@@ -357,6 +399,21 @@ const Home: NextPage = () => {
           </div>
           <div className="flex gap-2">
             <input
+              type="file"
+              accept=".txt,.md"
+              className="hidden"
+              ref={scriptInputRef}
+              onChange={handleScriptFileChange}
+            />
+            <button
+              onClick={handleScriptUploadClick}
+              disabled={isChatLoading || isScriptLoading}
+              className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 flex-shrink-0"
+              title="台本(.txt, .md)をアップロードして字幕を自動生成"
+            >
+              📄 台本
+            </button>
+            <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
@@ -366,7 +423,7 @@ const Home: NextPage = () => {
             />
             <button
               onClick={handleChatSend}
-              disabled={isChatLoading}
+              disabled={isChatLoading || isScriptLoading}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
             >
               送信
