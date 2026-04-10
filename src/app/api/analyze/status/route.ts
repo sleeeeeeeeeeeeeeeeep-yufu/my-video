@@ -24,24 +24,37 @@ const convertToSegments = (analysisResult: any) => {
   const segments: any[] = [];
   let currentId = 1;
 
+  let lastEndFrames = 0;
   speech.forEach((s: any) => {
     let startSec = s.start;
     let endSec = s.end;
     let text = s.text;
 
-    // フィラーによる手動の細切れ分割を廃止し、Geminiが抽出した区間をそのまま活かす
-    // （同じテキストが何度も複製されてアニメーションが壊れるのを防ぐため）
+    let startFrames = Math.round(startSec * FPS);
+    let endFrames = Math.round(endSec * FPS);
+
+    // AIの出力精度によりタイムスタンプが重複（被る）ことがあるため、厳格に前回の終了フレーム以降に補正する
+    if (startFrames < lastEndFrames) {
+      startFrames = lastEndFrames;
+    }
+    // 最低表示フレーム数（0.5秒 = 15フレーム）を保証する
+    if (endFrames <= startFrames) {
+      endFrames = startFrames + 15;
+    }
+
     segments.push({
       id: currentId++,
       type: s.type || "normal",
-      start: Math.round(startSec * FPS),
-      end: Math.round(endSec * FPS),
+      start: startFrames,
+      end: endFrames,
       text: text,
       animation: s.animation || "pop",
       position: "bottom",
       zoom: 1.0,
       se: s.se || "none",
     });
+
+    lastEndFrames = endFrames;
   });
 
   return segments;

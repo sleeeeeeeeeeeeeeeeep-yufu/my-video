@@ -49,7 +49,15 @@ export const useRendering = (
       status: "invoking",
     });
     try {
-      const { renderId, bucketName } = await renderVideo({ id, inputProps, originalFileName });
+      const result = (await renderVideo({ id, inputProps, originalFileName })) as any;
+      console.log("Full API Response:", result);
+      const { renderId, bucketName, estimatedCost } = result;
+      
+      console.log(`Render ID: ${renderId}`);
+      if (estimatedCost !== undefined) {
+        console.log(`Estimated cost: $${estimatedCost.toFixed(4)}`);
+      }
+      
       setState({
         status: "rendering",
         progress: 0,

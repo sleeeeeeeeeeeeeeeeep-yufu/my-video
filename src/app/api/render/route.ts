@@ -1,3 +1,4 @@
+import { estimatePrice } from "@remotion/lambda";
 import {
   AwsRegion,
   renderMediaOnLambda,
@@ -57,7 +58,10 @@ export const POST = async (req: Request) => {
       serveUrl: SITE_NAME,
       composition: COMP_NAME,
       inputProps: inputProps,
-      framesPerLambda: 200,
+      // 以前は「framesPerLambda: 200」固定でしたが、フル尺になったことでLambdaの分割起動数（並列処理数）が
+      // アカウントの初期上限（10個など）を超えて Rate Exceeded となる問題が発生します。
+      // これを解決するため、最低200フレームは処理させつつ、全体の起動Lambda数が最大でも8個（安全圏）以下になるように動的調整します。
+      framesPerLambda: Math.max(200, Math.ceil(durationInFrames / 8)),
       concurrencyPerLambda: 1,
       privacy: "public",
       frameRange: [0, Math.max(0, durationInFrames - 1)] as [number, number],
@@ -67,11 +71,33 @@ export const POST = async (req: Request) => {
       },
     });
 
+    console.log("Lambda Render Result:", JSON.stringify(result, null, 2));
+
+
+    // コスト見積もりの手動計算
+    // 1フレームあたりのレンダリング時間を平均150msと仮定して計算
+    const framesPerLambdaCalc = Math.max(200, Math.ceil(durationInFrames / 8));
+    const lambdasInvoked = Math.ceil(durationInFrames / framesPerLambdaCalc);
+    const estimatedRenderDurationInMs = durationInFrames * 150;
+
+    const estimatedCost = estimatePrice({
+      region: REGION as AwsRegion,
+      memorySizeInMb: RAM,
+      diskSizeInMb: DISK,
+      durationInMilliseconds: estimatedRenderDurationInMs,
+      lambdasInvoked,
+    });
+
+    console.log(`Manual Cost Estimate: $${estimatedCost.toFixed(4)}`);
+
     return new Response(
       JSON.stringify({
         type: "success",
-        data: result,
-      } as ApiResponse<RenderMediaOnLambdaOutput>),
+        data: {
+          ...result,
+          estimatedCost, // 独自に追加
+        },
+      } as ApiResponse<RenderMediaOnLambdaOutput & { estimatedCost: number }>),
       {
         headers: {
           "content-type": "application/json",
