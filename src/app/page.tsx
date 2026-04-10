@@ -159,14 +159,45 @@ const Home: NextPage = () => {
     const userMessage: Message = { role: "user", content: messageContent };
     setMessages((prev) => [...prev, userMessage]);
     setIsChatLoading(true);
+
     try {
+      // 意図の簡易判定
+      let target: "metadata" | "segments" | "all" = isPartial ? "segments" : "all";
+      if (!isPartial) {
+        const msg = messageContent.toLowerCase();
+        // デザイン・設定系のキーワード
+        const isTheme = /色|カラー|color|赤|青|緑|白|黒|フォント|サイズ|大きく|小さく|太字|縁取り|タイトル|背景|テーマ|雰囲気/.test(msg);
+        // 内容・編集系のキーワード（「テロップ」等の名詞はデザイン系でも使われるため除外）
+        const isSegments = /台本|作成|文字|修正|タイミング|追加|削除|消して|と言って|喋り/.test(msg);
+        
+        if (isTheme && !isSegments) target = "metadata";
+        else if (isSegments && !isTheme) target = "segments";
+      }
+
+      // 送信データの最小化
+      let stateToSend = inputEpisode;
+      if (target === "metadata") {
+        stateToSend = {
+          theme: inputEpisode.theme,
+          meta: inputEpisode.meta,
+          fixedTitle: inputEpisode.fixedTitle
+        };
+      } else if (target === "segments") {
+        stateToSend = {
+          segments: inputEpisode.segments
+        };
+      }
+
+      console.log(`Chat Mode: ${target}`);
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: [...messages, userMessage],
-          currentEpisodeState: inputEpisode,
-          isPartial
+          currentEpisodeState: stateToSend,
+          isPartial: isPartial || target === "segments",
+          target
         }),
       });
       const data = await res.json();
@@ -185,31 +216,34 @@ const Home: NextPage = () => {
       ]);
       
       if (data.episodeJson) {
-        // パーシャルアップデート（配列のみ）かフルアップデート（オブジェクト）かを判別してマージ
+        // パーシャルアップデート（配列のみ）かフルアップデート（オブジェクト）かを判読してマージ
         const isArray = Array.isArray(data.episodeJson);
         const newSegments = isArray ? data.episodeJson : data.episodeJson.segments;
 
-        if (newSegments) {
-          setInputEpisode((prev: any) => ({
-            ...prev,
-            ...(isArray ? {} : data.episodeJson), // オブジェクトなら全体をマージ（theme等含む）
-            segments: newSegments, // 字幕リストを差し替え
-          }));
+        setInputEpisode((prev: any) => {
+          const next = { ...prev };
           
-          // タイトルが含まれていれば反映
-          const newTitle = isArray ? null : data.episodeJson.meta?.title;
-          if (newTitle) {
-            setText(newTitle);
+          if (isArray || newSegments) {
+            next.segments = newSegments || data.episodeJson;
           }
-        } else if (!isArray) {
-          // segmentsが含まれないオブジェクト（テーマ変更のみ等）の場合
-          setInputEpisode((prev: any) => ({
-            ...prev,
-            ...data.episodeJson
-          }));
-        }
+          
+          if (!isArray) {
+            // オブジェクトの場合は、返ってきたキーのみをマージ
+            if (data.episodeJson.theme) {
+              next.theme = { ...next.theme, ...data.episodeJson.theme };
+            }
+            if (data.episodeJson.meta) {
+              next.meta = { ...next.meta, ...data.episodeJson.meta };
+              if (data.episodeJson.meta.title) {
+                setText(data.episodeJson.meta.title);
+              }
+            }
+            if (data.episodeJson.fixedTitle) next.fixedTitle = data.episodeJson.fixedTitle;
+          }
+          
+          return next;
+        });
       } else {
-        // AIがJSONを返さなかった場合
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: "（※データの更新は行われませんでした。もう一度詳しく指示してみてください）" },
@@ -279,61 +313,52 @@ const Home: NextPage = () => {
     ]);
     
     try {
-      // 1. クライアント側で音声を抽出 (Web Audio API)
-      const audioBlob = await extractAudioFromVideo(videoFile);
+      console.time("AudioExtraction");
+      // 1. クライアント側で音声を抽出 (30秒ごとのチャンク配列を取得)
+      const audioChunks = await extractAudioFromVideo(videoFile);
+      console.timeEnd("AudioExtraction");
       
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "音声の解析を開始しました。これには数分かかる場合があります..." },
+        { role: "assistant", content: "AI解析を実行中..." },
       ]);
-
+ 
+      console.time("AnalysisAPI");
       // 2. 音声データを送信してジョブを開始
       const formData = new FormData();
-      formData.append("audio", audioBlob, "audio.wav");
-
-      const startRes = await fetch("/api/analyze", {
-        method: "POST",
-        body: formData, // FormData として音声ファイルを送信
+      audioChunks.forEach((chunk, index) => {
+        formData.append(`audio_${index}`, chunk, `chunk_${index}.wav`);
       });
-      const startData = await startRes.json();
-      if (!startRes.ok) throw new Error(startData.error);
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      console.timeEnd("AnalysisAPI");
+
+      if (!res.ok) throw new Error(data.error);
       
-      const jobId = startData.jobId;
-
-      // 3. 完了するまで数秒おきにステータスをポーリングする
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        const statusRes = await fetch("/api/analyze/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId, videoUrl: videoSrc }),
-        });
-        
-        const statusData = await statusRes.json();
-        
-        if (statusData.status === "COMPLETED") {
-          if (statusData.episodeJson) {
-            setInputEpisode((prev: any) => ({
-              ...statusData.episodeJson,
-              meta: {
-                ...statusData.episodeJson.meta,
-                // 解析APIの固定値で上書きされないようにクライアントの長さを保持
-                durationInFrames: prev.meta?.durationInFrames || statusData.episodeJson.meta?.durationInFrames
-              }
-            }));
-            if (statusData.episodeJson.meta?.title) {
-              setText(statusData.episodeJson.meta.title);
-            }
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", content: "解析が完了しました！無音区間の調整と字幕の生成が完了しました。" },
-            ]);
+      if (data.status === "COMPLETED" && data.episodeJson) {
+        setInputEpisode((prev: any) => ({
+          ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
+          ...data.episodeJson, // 解析結果（segmentsなど）で更新
+          meta: {
+            ...prev.meta,
+            ...data.episodeJson.meta,
+            // 解析APIの固定値で上書きされないようにクライアントの長さを保持
+            durationInFrames: prev.meta?.durationInFrames || data.episodeJson.meta?.durationInFrames
           }
-          break;
-        } else if (statusData.status === "FAILED") {
-          throw new Error(statusData.error || "Geminiでの解析に失敗しました。");
+        }));
+        if (data.episodeJson.meta?.title) {
+          setText(data.episodeJson.meta.title);
         }
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "解析が完了しました！字幕の生成が完了しました。" },
+        ]);
+      } else {
+        throw new Error("解析結果が正しく受け取れませんでした。");
       }
 
     } catch (error) {

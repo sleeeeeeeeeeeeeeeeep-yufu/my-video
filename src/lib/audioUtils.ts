@@ -1,7 +1,9 @@
+const CHUNK_DURATION_SEC = 30;
+
 /**
- * Extract audio from a video file and return it as a WAV Blob.
+ * Extract audio from a video file and return it as an array of WAV Blobs (30s chunks).
  */
-export async function extractAudioFromVideo(file: File): Promise<Blob> {
+export async function extractAudioFromVideo(file: File): Promise<Blob[]> {
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
     sampleRate: 16000, // 16kHz for efficient speech analysis
   });
@@ -22,7 +24,32 @@ export async function extractAudioFromVideo(file: File): Promise<Blob> {
   source.start();
 
   const renderedBuffer = await offlineContext.startRendering();
-  return bufferToWav(renderedBuffer);
+  
+  // Chunking logic
+  const chunks: Blob[] = [];
+  const totalDuration = renderedBuffer.duration;
+  const sampleRate = renderedBuffer.sampleRate;
+  
+  for (let start = 0; start < totalDuration; start += CHUNK_DURATION_SEC) {
+    const end = Math.min(start + CHUNK_DURATION_SEC, totalDuration);
+    const frameCount = Math.floor((end - start) * sampleRate);
+    const chunkBuffer = new AudioBuffer({
+      length: frameCount,
+      numberOfChannels: 1,
+      sampleRate: sampleRate,
+    });
+    
+    // Copy data to chunk
+    const data = renderedBuffer.getChannelData(0).slice(
+      Math.floor(start * sampleRate),
+      Math.floor(start * sampleRate) + frameCount
+    );
+    chunkBuffer.copyToChannel(data, 0);
+    
+    chunks.push(bufferToWav(chunkBuffer));
+  }
+  
+  return chunks;
 }
 
 /**
