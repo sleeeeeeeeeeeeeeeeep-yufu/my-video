@@ -208,14 +208,20 @@ const Home: NextPage = () => {
 
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const text = e.target?.result as string;
-      if (text) {
-        const prompt = `以下の台本テキストを元に、字幕セグメントを構成・校正してください。\n\n【台本】\n${text}`;
-        await sendChatMessage(prompt);
-      }
-      setIsScriptLoading(false);
-      if (scriptInputRef.current) {
-         scriptInputRef.current.value = "";
+      try {
+        const text = e.target?.result as string;
+        if (text) {
+          const prompt = `以下の台本テキストを元に、字幕セグメントを構成・校正してください。\n\n【台本】\n${text}`;
+          await sendChatMessage(prompt);
+        }
+      } catch (error) {
+        console.error("Script process error:", error);
+        alert("台本の処理中にエラーが発生しました。");
+      } finally {
+        setIsScriptLoading(false);
+        if (scriptInputRef.current) {
+           scriptInputRef.current.value = "";
+        }
       }
     };
     reader.onerror = () => {
@@ -408,7 +414,7 @@ const Home: NextPage = () => {
             <button
               onClick={handleScriptUploadClick}
               disabled={isChatLoading || isScriptLoading}
-              className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 flex-shrink-0"
+              className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed flex-shrink-0"
               title="台本(.txt, .md)をアップロードして字幕を自動生成"
             >
               📄 台本
@@ -417,16 +423,16 @@ const Home: NextPage = () => {
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleChatSend()}
+              onKeyDown={(e) => e.key === "Enter" && !isChatLoading && !isScriptLoading && handleChatSend()}
               placeholder="例：テロップを大きくして"
               className="flex-1 border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
             />
             <button
               onClick={handleChatSend}
               disabled={isChatLoading || isScriptLoading}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-blue-200 disabled:cursor-not-allowed transition-colors shadow-sm"
             >
-              送信
+              {isChatLoading ? "送信中..." : "送信"}
             </button>
           </div>
         </div>

@@ -4,8 +4,16 @@ import currentEpisode from "../../../episode.json";
 export async function POST(req: NextRequest) {
   const { messages, currentEpisodeState } = await req.json();
 
-  // クライアントで保持している最新状態があればそれを使用し、なければ静的ファイルを使用する
-  const baseEpisode = currentEpisodeState || currentEpisode;
+  // ペイロード軽量化: AIには必要最低限の情報だけを渡す
+  const baseEpisode = currentEpisodeState ? {
+    ...currentEpisodeState,
+    videoSrc: undefined, // 巨大なURL等は不要
+    meta: {
+      ...currentEpisodeState.meta,
+      fps: currentEpisodeState.meta?.fps || 30,
+      durationInFrames: currentEpisodeState.meta?.durationInFrames || 1200,
+    }
+  } : currentEpisode;
 
   const systemPrompt = `
 あなたはショート動画の編集AIアシスタントです。
@@ -31,37 +39,60 @@ JSON:（編集したepisode.json全体をここに書く）
    - もしまだセグメントがほとんど無い（または初期状態）の場合は、台本から自然な区切り（1セグメントあたり3〜5秒）を推定し、新しく segments を生成してください。
 `;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-    }),
-  });
+  console.log("--- Chat API Request ---");
+  console.log("Messages count:", messages.length);
 
-  const data = await response.json();
-  const raw = data.choices?.[0]?.message?.content || "";
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages,
+        ],
+      }),
+    });
 
-  const replyMatch = raw.match(/REPLY:([\s\S]*?)JSON:/);
-  const jsonMatch = raw.match(/JSON:([\s\S]*)/);
-
-  const reply = replyMatch ? replyMatch[1].trim() : "承知しました。";
-  let episodeJson = null;
-
-  if (jsonMatch) {
-    try {
-      episodeJson = JSON.parse(jsonMatch[1].trim());
-    } catch {
-      episodeJson = null;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("OpenAI API Error:", errorText);
+      return NextResponse.json({ error: "OpenAI API returned an error" }, { status: 500 });
     }
-  }
 
-  return NextResponse.json({ reply, episodeJson });
+    const data = await response.json();
+    const raw = data.choices?.[0]?.message?.content || "";
+
+    console.log("--- AI Raw Content Start ---");
+    console.log(raw);
+    console.log("--- AI Raw Content End ---");
+
+    const replyMatch = raw.match(/REPLY:([\s\S]*?)JSON:/);
+    const jsonMatch = raw.match(/JSON:([\s\S]*)/);
+
+    const reply = replyMatch ? replyMatch[1].trim() : "承知しました。";
+    let episodeJson = null;
+
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[1].trim().replace(/```json\n?|\n?```/g, "");
+      try {
+        episodeJson = JSON.parse(jsonStr);
+        console.log("JSON parsing successful");
+      } catch (e) {
+        console.error("JSON parsing failed:", e);
+        console.error("Target string was:", jsonStr);
+      }
+    } else {
+      console.warn("No JSON match found in AI response");
+    }
+
+    return NextResponse.json({ reply, episodeJson });
+  } catch (error) {
+    console.error("Chat API Internal Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
 }
