@@ -2,7 +2,6 @@ import { z } from "zod";
 import { COMP_NAME, CompositionProps } from "../../types/constants";
 import { useRendering } from "../helpers/use-rendering";
 import { AlignEnd } from "./AlignEnd";
-import { Button } from "./Button";
 import { InputContainer } from "./Container";
 import { DownloadButton } from "./DownloadButton";
 import { ErrorComp } from "./Error";
@@ -24,6 +23,7 @@ export const RenderControls: React.FC<{
       state.status === "invoking" ||
       state.status === "error" ? (
         <>
+          <div className="text-sm text-gray-500 mb-2">タイトル</div>
           <Input
             disabled={state.status === "invoking"}
             setText={setText}
@@ -31,13 +31,13 @@ export const RenderControls: React.FC<{
           ></Input>
           <Spacing></Spacing>
           <AlignEnd>
-            <Button
+            <button
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-blue-200 disabled:cursor-not-allowed transition-colors shadow-sm"
               disabled={state.status === "invoking"}
-              loading={state.status === "invoking"}
               onClick={renderMedia}
             >
-              Render video
-            </Button>
+              {state.status === "invoking" ? "送信中..." : "Render video"}
+            </button>
           </AlignEnd>
           {state.status === "error" ? (
             <ErrorComp message={state.error.message}></ErrorComp>

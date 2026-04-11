@@ -16,39 +16,66 @@ export async function POST(req: NextRequest) {
     // 不要な記号（マークダウン記号、バックスラッシュ等）を除去。絵文字は維持
     const cleanedScript = scriptText.replace(/[*#_~`\\]/g, "");
 
-    // 改行、句読点、感嘆符などでテキストを分割
-    const rawPhrases = cleanedScript.replace(/([。！？\n]+)/g, "$1|").split('|');
-    const basePhrases = rawPhrases
-      .map((p: string) => p.trim())
-      .filter((p: string) => {
-        if (p.length === 0) return false;
-        if (p.includes("インスタキャプション")) return false;
-        if (/^[ー\-─\s]+$/.test(p)) return false;
-        return true;
-      });
+    // 1. 句読点（。！？）および読点（、）で分割しつつ、記号そのものは除去するロジック
+    const allParts = cleanedScript.split(/([。！？、\n\s]+)/).filter(Boolean);
+    
+    const bufferPhrases: string[] = [];
+    let currentBuffer = "";
 
-    // --- 【10文字分割ロジック】 ---
-    const optimizedPhrases: string[] = [];
-    basePhrases.forEach((p: string) => {
-      if (p.length <= 10) {
-        optimizedPhrases.push(p);
-      } else {
-        const subParts = p.split(/([。、！？…]+)/g).filter(Boolean);
-        const joinedSubParts: string[] = [];
-        for (let i = 0; i < subParts.length; i += 2) {
-          joinedSubParts.push(subParts[i] + (subParts[i + 1] || ""));
+    for (let i = 0; i < allParts.length; i++) {
+        const part = allParts[i];
+        
+        // 記号（。！？、\n\s）の場合：分割のトリガーとしてのみ使用し、テキストには含めない
+        if (/^[。！？、\n\s]+$/.test(part)) {
+            const isFullStop = /[。！？\n]/.test(part);
+            const isComma = part.includes("、");
+            
+            // 句読点（。！？）の場合は、現在のバッファが4文字以上なら分割を確定
+            if (isFullStop && currentBuffer.length >= 4) {
+                bufferPhrases.push(currentBuffer);
+                currentBuffer = "";
+            } 
+            // 読点（、）の場合は、15文字以上たまっていれば分割（短すぎる分割を防ぐ）
+            else if (isComma && currentBuffer.length >= 15) {
+                bufferPhrases.push(currentBuffer);
+                currentBuffer = "";
+            }
+            continue;
         }
 
-        joinedSubParts.forEach((sub: string) => {
-          if (sub.length <= 10) {
-            optimizedPhrases.push(sub);
-          } else {
-            for (let i = 0; i < sub.length; i += 10) {
-              optimizedPhrases.push(sub.slice(i, i + 10));
-            }
-          }
-        });
-      }
+        // 通常のテキストの場合
+        // 20文字を超える場合は現在のバッファを一旦出す
+        if (currentBuffer.length + part.length > 20 && currentBuffer.length > 0) {
+            bufferPhrases.push(currentBuffer);
+            currentBuffer = "";
+        }
+        
+        currentBuffer += part;
+        
+        // 1つのテキストパート自体が20文字を超えている場合の強制分割
+        while (currentBuffer.length > 20) {
+            bufferPhrases.push(currentBuffer.slice(0, 20));
+            currentBuffer = currentBuffer.slice(20);
+        }
+    }
+    
+    if (currentBuffer) {
+        // 最後の余ったテキストが4文字未満で、かつ前と結合しても20文字以内なら結合
+        if (currentBuffer.length < 4 && bufferPhrases.length > 0 && 
+           (bufferPhrases[bufferPhrases.length - 1].length + currentBuffer.length <= 20)) {
+            bufferPhrases[bufferPhrases.length - 1] += currentBuffer;
+        } else {
+            bufferPhrases.push(currentBuffer);
+        }
+    }
+
+    // 無効なフレーズや特定の除外ワードを除外
+    const finalPhrases = bufferPhrases.filter(p => {
+        const trimmed = p.trim();
+        if (!trimmed) return false;
+        if (trimmed.includes("インスタキャプション")) return false;
+        if (/^[ー\-─\s]+$/.test(trimmed)) return false;
+        return true;
     });
 
     const oldSegments = currentEpisodeState?.segments || [];
@@ -59,11 +86,11 @@ export async function POST(req: NextRequest) {
     const minStart = Math.min(...oldSegments.map((s: any) => s.start));
     const maxEnd = Math.max(...oldSegments.map((s: any) => s.end));
     const totalTime = Math.max(maxEnd - minStart, 1);
-    const totalLength = optimizedPhrases.reduce((sum: number, p: string) => sum + p.length, 0);
+    const totalLength = finalPhrases.reduce((sum: number, p: string) => sum + p.length, 0);
 
     let currentStart = minStart;
-    const newSegments = optimizedPhrases.map((phrase: string, idx: number) => {
-      const duration = totalLength === 0 ? (totalTime / optimizedPhrases.length) : (phrase.length / totalLength) * totalTime;
+    const newSegments = finalPhrases.map((phrase: string, idx: number) => {
+      const duration = totalLength === 0 ? (totalTime / finalPhrases.length) : (phrase.length / totalLength) * totalTime;
       const end = currentStart + duration;
 
       let type = "normal";
@@ -72,7 +99,7 @@ export async function POST(req: NextRequest) {
 
       if (idx === 0) {
         type = "hook"; animation = "pop"; se = "pikon";
-      } else if (idx === optimizedPhrases.length - 1) {
+      } else if (idx === finalPhrases.length - 1) {
         type = "conclusion"; animation = "reveal";
       } else if (idx % 10 === 0) {
         type = "emphasis"; se = "chan";
@@ -93,9 +120,9 @@ export async function POST(req: NextRequest) {
       return seg;
     });
 
-    console.log(`--- Rule-based Script Optimized [Phrases: ${optimizedPhrases.length}] ---`);
+    console.log(`--- Rule-based Script Optimized [Phrases: ${finalPhrases.length}] ---`);
     return NextResponse.json({
-      reply: `台本を ${optimizedPhrases.length} 個のフレーズに最適に分割し、タイミングを割り当てました！`,
+      reply: `台本を ${finalPhrases.length} 個のフレーズに分割し、タイミングを割り当てました！`,
       segments: newSegments,
       theme: null
     });

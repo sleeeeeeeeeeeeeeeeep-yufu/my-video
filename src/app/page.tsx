@@ -4,7 +4,7 @@ import { Player } from "@remotion/player";
 import type { NextPage } from "next";
 import { useMemo, useState, useRef, useEffect } from "react";
 import { z } from "zod";
-import { CompositionProps, defaultMyCompProps } from "../../types/constants";
+import { CompositionProps } from "../../types/constants";
 import { RenderControls } from "../components/RenderControls";
 import { Spacing } from "../components/Spacing";
 import { Tips } from "../components/Tips";
@@ -32,11 +32,9 @@ const getVideoDuration = (file: File): Promise<number> => {
 };
 
 const Home: NextPage = () => {
-  const [inputEpisode, setInputEpisode] = useState<any>(episode);
-  const [text, setText] = useState<string>(
-    episode.meta?.title || defaultMyCompProps.meta.title,
-  );
-  const [videoSrc, setVideoSrc] = useState<string>(episode.videoSrc || "");
+  const [inputEpisode, setInputEpisode] = useState<any>({ ...episode, segments: [], fixedTitle: "" });
+  const [text, setText] = useState<string>("");
+  const [videoSrc, setVideoSrc] = useState<string>("");
   const [originalFileName, setOriginalFileName] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -45,17 +43,19 @@ const Home: NextPage = () => {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isScriptLoading, setIsScriptLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAnalyzed, setIsAnalyzed] = useState(false);
+  const [isScriptUploaded, setIsScriptUploaded] = useState(false);
+  const [scriptText, setScriptText] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scriptInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // ステートを完全に初期化する共通関数
   const resetStates = () => {
     localStorage.clear();
     setInputEpisode(episode);
-    setText(episode.meta?.title || defaultMyCompProps.meta.title);
+    setText("");
     setVideoSrc("");
     setOriginalFileName("");
     setMessages([]);
@@ -65,11 +65,28 @@ const Home: NextPage = () => {
     setIsAnalyzing(false);
     setIsChatLoading(false);
     setIsScriptLoading(false);
+    setIsAnalyzed(false);
+    setIsScriptUploaded(false);
+    setScriptText("");
   };
 
-  // 3. [自動スクロール] メッセージ送信時に最下部へ追従
+  // 初回マウント時にステートをリセット
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setInputEpisode((prev: any) => ({ ...prev, segments: [], fixedTitle: "" }));
+    setVideoSrc("");
+    setVideoFile(null);
+    setMessages([]);
+    setOriginalFileName("");
+    setIsAnalyzed(false);
+    setIsScriptUploaded(false);
+    setScriptText("");
+  }, []);
+
+  // 3. [自動スクロール] メッセージ送信時に最下部へ追従 (チャット欄限定)
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages, isChatLoading]);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
@@ -91,8 +108,10 @@ const Home: NextPage = () => {
     const file = event instanceof File ? event : event.target.files?.[0];
     if (!file) return;
 
-    // 全ステートをリセットしてクリーンな状態にする
-    resetStates();
+    // 動画アップロード時に古いセグメントと解析状態のみリセット
+    setInputEpisode((prev: any) => ({ ...prev, segments: [], fixedTitle: "" }));
+    setIsAnalyzed(false);
+
     setMessages([{ role: "assistant", content: "新しい動画を読み込みました。解析を開始してください。" }]);
     setVideoFile(file); // Store file for analysis
     try {
@@ -198,9 +217,9 @@ const Home: NextPage = () => {
     }
   };
 
-  const sendChatMessage = async (messageContent: string, options?: { isPartial?: boolean }) => {
+  const sendChatMessage = async (messageContent: string, options?: { isPartial?: boolean; overrideSegments?: any[] }) => {
     if (!messageContent.trim()) return;
-    const { isPartial } = options || {};
+    const { isPartial, overrideSegments } = options || {};
     
     const userMessage: Message = { role: "user", content: messageContent };
     setMessages((prev) => [...prev, userMessage]);
@@ -227,7 +246,9 @@ const Home: NextPage = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: [...messages, userMessage],
-          currentEpisodeState: inputEpisode,
+          currentEpisodeState: overrideSegments 
+            ? { ...inputEpisode, segments: overrideSegments }
+            : inputEpisode,
           isPartial: isPartial === true,
           target
         }),
@@ -235,6 +256,10 @@ const Home: NextPage = () => {
       const data = await res.json();
       
       if (data.error) {
+        if (data.error.includes("既存の字幕データがありません")) {
+          setIsChatLoading(false);
+          return;
+        }
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: `APIエラー: ${data.error}` },
@@ -286,7 +311,13 @@ const Home: NextPage = () => {
     reader.onload = async (event) => {
       const content = event.target?.result as string;
       if (content) {
-        await sendChatMessage(`【台本】\n${content}`, { isPartial: true });
+        // 台本を保存するだけにする
+        setScriptText(content);
+        setIsScriptUploaded(true);
+        setMessages((prev) => [
+          ...prev,
+          { role: "user", content: `【台本】\n${content}` },
+        ]);
       }
       setIsScriptLoading(false);
     };
@@ -333,6 +364,7 @@ const Home: NextPage = () => {
       if (!res.ok) throw new Error(data.error);
       
       if (data.status === "COMPLETED" && data.episodeJson) {
+        const finalSegments = data.episodeJson.segments;
         setInputEpisode((prev: any) => ({
           ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
           ...data.episodeJson, // 解析結果（segmentsなど）で更新
@@ -350,6 +382,20 @@ const Home: NextPage = () => {
           ...prev,
           { role: "assistant", content: "解析が完了しました！字幕の生成が完了しました。" },
         ]);
+        setIsAnalyzed(true);
+
+        // 台本が予約されている場合は自動的に流し込む
+        if (scriptText) {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: "台本を自動反映しています..." },
+          ]);
+          await sendChatMessage(`【台本】\n${scriptText}`, { 
+            isPartial: true, 
+            overrideSegments: finalSegments 
+          });
+          setScriptText(""); // 完了したのでクリア
+        }
       } else {
         throw new Error("解析結果が正しく受け取れませんでした。");
       }
@@ -375,73 +421,116 @@ const Home: NextPage = () => {
           </div>
         </div>
       )}
-      <div className="max-w-screen-md m-auto mb-5 px-4">
-        <div className="overflow-hidden rounded-geist shadow-[0_0_200px_rgba(0,0,0,0.15)] mb-10 mt-16">
-          <Player
-            component={Main}
-            inputProps={inputProps}
-            durationInFrames={inputProps.meta?.durationInFrames || 1200}
-            fps={inputProps.meta?.fps || 30}
-            compositionHeight={1920}
-            compositionWidth={1080}
-            style={{ width: "100%" }}
-            controls
-            loop
-          />
-        </div>
-
-        {/* Upload Section */}
-        <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8">
+        <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8 mt-16 overflow-hidden">
           <h3 className="text-lg font-bold mb-4 text-gray-800">
-            動画素材をアップロード
+            プレビュー
           </h3>
-          <input
-            type="file"
-            accept="video/mp4"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-          />
-          <button
-            onClick={handleUploadClick}
-            disabled={isUploading}
-            className={`w-full py-3 px-6 rounded-lg font-medium transition-all ${
-              isUploading
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-md shadow-blue-200"
-            }`}
-          >
-            {isUploading
-              ? `アップロード中 (${uploadProgress}%)`
-              : "MP4ファイルを選択"}
-          </button>
-          {isUploading && (
-            <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mt-3">
-              <div
-                className="bg-blue-500 h-full transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
-              />
+          <div className="rounded-geist overflow-hidden border border-gray-100 shadow-[0_0_200px_rgba(0,0,0,0.15)]">
+            {videoSrc ? (
+            <Player
+              component={Main}
+              inputProps={inputProps}
+              durationInFrames={inputProps.meta?.durationInFrames || 1200}
+              fps={inputProps.meta?.fps || 30}
+              compositionHeight={1920}
+              compositionWidth={1080}
+              style={{ width: "100%" }}
+              controls
+              loop
+            />
+          ) : (
+            <div 
+              className="flex items-center justify-center bg-gray-50"
+              style={{ width: "100%", aspectRatio: "1080 / 1920", maxHeight: "70vh" }}
+            >
+              <p className="text-gray-400 font-medium text-center">
+                アップロードしてください👇
+              </p>
             </div>
           )}
-          {videoSrc && (
-            <button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              className={`w-full mt-4 py-3 px-6 rounded-lg font-medium transition-all ${
-                isAnalyzing
-                  ? "bg-purple-100 text-purple-400 cursor-not-allowed"
-                  : "bg-purple-600 text-white hover:bg-purple-700 active:scale-95 shadow-md shadow-purple-200"
-              }`}
-            >
-              {isAnalyzing ? "AI解析中..." : "AIで動画を解析して構成を作る"}
-            </button>
-          )}
         </div>
 
-        {/* Chat Section */}
+
+        {/* Section 1: Materials & Analysis */}
+        <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8">
+          <h3 className="text-lg font-bold mb-4 text-gray-800">
+            素材・解析
+          </h3>
+
+          <div className="space-y-4">
+            {/* Step 1: Script Upload (Always visible) */}
+            <div>
+              <input
+                type="file"
+                accept=".txt,.md"
+                className="hidden"
+                ref={scriptInputRef}
+                onChange={handleScriptFileChange}
+              />
+              <button
+                onClick={handleScriptUploadClick}
+                disabled={isScriptLoading}
+                className={`w-full py-4 px-6 rounded-lg font-medium shadow-md transition-all flex items-center justify-center gap-2 ${
+                  isScriptLoading
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-green-600 text-white hover:bg-green-700 active:scale-95 shadow-green-200"
+                }`}
+              >
+                {isScriptLoading ? "台本読み込み中..." : "ステップ1：台本をアップロード"}
+              </button>
+            </div>
+
+            {/* Step 2: MP4 Selection (Visible only if isScriptUploaded) */}
+            {isScriptUploaded && (
+              <div>
+                <input
+                  type="file"
+                  accept="video/mp4"
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                />
+                <button
+                  onClick={handleUploadClick}
+                  disabled={isUploading}
+                  className={`w-full py-4 px-6 rounded-lg font-medium transition-all ${
+                    isUploading
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-md shadow-blue-200"
+                  }`}
+                >
+                  {isUploading ? (
+                    `アップロード中 (${uploadProgress}%)`
+                  ) : (
+                    "ステップ2：MP4ファイルをアップロード"
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Step 3: AI Analysis (Visible only if videoSrc) */}
+            {videoSrc && (
+              <button
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                className={`w-full py-3 px-6 rounded-lg font-medium transition-all ${
+                  isAnalyzing
+                    ? "bg-purple-100 text-purple-400 cursor-not-allowed"
+                    : "bg-purple-600 text-white hover:bg-purple-700 active:scale-95 shadow-md shadow-purple-200"
+                }`}
+              >
+                {isAnalyzing ? "AI解析中..." : "AIで動画を解析"}
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8">
           <h3 className="text-lg font-bold mb-4 text-gray-800">AIに指示する</h3>
-          <div className="flex flex-col gap-3 mb-4 max-h-80 overflow-y-auto">
+          <div 
+            ref={chatContainerRef}
+            className="flex flex-col gap-3 mb-4 max-h-80 overflow-y-auto scroll-smooth"
+          >
             {messages.length === 0 && (
               <p className="text-sm text-gray-400">
                 「テロップを大きくして」「背景を暗くして」など、日本語で指示してください。
@@ -463,7 +552,7 @@ const Home: NextPage = () => {
                 </div>
               </div>
             ))}
-            <div ref={messagesEndRef} />
+
             {isChatLoading && (
               <div className="flex justify-start">
                 <div className="px-4 py-2 rounded-2xl text-sm bg-gray-100 text-gray-400">
@@ -473,21 +562,6 @@ const Home: NextPage = () => {
             )}
           </div>
           <div className="flex gap-2">
-            <input
-              type="file"
-              accept=".txt,.md"
-              className="hidden"
-              ref={scriptInputRef}
-              onChange={handleScriptFileChange}
-            />
-            <button
-              onClick={handleScriptUploadClick}
-              disabled={isChatLoading || isScriptLoading}
-              className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed flex-shrink-0"
-              title="台本(.txt, .md)をアップロードして字幕を自動生成"
-            >
-              📄 台本
-            </button>
             <input
               type="text"
               value={chatInput}
@@ -506,12 +580,17 @@ const Home: NextPage = () => {
           </div>
         </div>
 
-        <RenderControls
-          text={text}
-          setText={setText}
-          inputProps={inputProps}
-          originalFileName={originalFileName}
-        />
+        {/* Section 3: Rendering */}
+        <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8">
+          <h3 className="text-lg font-bold mb-4 text-gray-800">レンダリング</h3>
+          <RenderControls
+            text={text}
+            setText={setText}
+            inputProps={inputProps}
+            originalFileName={originalFileName}
+          />
+        </div>
+        
         <Spacing />
         <Spacing />
         <Tips />

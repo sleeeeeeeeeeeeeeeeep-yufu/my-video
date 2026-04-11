@@ -16,7 +16,7 @@ export const Input: React.FC<{
     <input
       type="search"
       autoComplete="off"
-      className="leading-[1.7] block w-full rounded-geist bg-background p-geist-half text-foreground text-sm border border-unfocused-border-color transition-colors duration-150 ease-in-out focus:border-focused-border-color outline-none"
+      className="leading-[1.7] block w-full rounded-geist bg-white p-geist-half text-gray-800 text-sm border border-gray-200 transition-colors duration-150 ease-in-out focus:border-blue-300 outline-none"
       disabled={disabled}
       name="title"
       value={text}

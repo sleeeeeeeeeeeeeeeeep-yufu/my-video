@@ -21,7 +21,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
   const vSrc = (videoSrc && videoSrc.trim() !== "") ? videoSrc : "test.mp4";
   
   // 現在のフレームに該当するセグメントを取得
-  const activeSegment = segments.find((s: any) => frame >= s.start && frame < s.end);
+  const activeSegment = (segments || []).find((s: any) => frame >= s.start && frame < s.end);
   const zoom = activeSegment?.zoom ?? 1.0;
   
   // translate用のパーセンテージ計算 (e.g. 0.1 -> 10%)
@@ -52,7 +52,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
       </AbsoluteFill>
 
       {/* 上部固定タイトル */}
-      {fixedTitle && (
+      {fixedTitle && fixedTitle.trim() !== "" && (
         <div 
           style={{
             position: 'absolute',
@@ -88,7 +88,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
       )}
 
       {/* セグメントごとの処理（テキストと効果音） */}
-      {segments.map((segment: any) => {
+      {segments && segments.length > 0 && segments.map((segment: any) => {
         const isCenter = segment.position === "center";
         
         let textColor = theme.mainTextColor;
@@ -141,22 +141,55 @@ const SegmentText: React.FC<{
   strokeWidth: number
 }> = ({ segment, localFrame, fontSize, textColor, strokeColor, strokeWidth }) => {
   let scale = 1;
-  let text = segment.text || "";
+  const originalText = (segment.text || "").replace(/\n/g, "");
+  
+  // 絵文字を末尾から分離（BudouXの脱落防止と改行ズレ対策）
+  const emojiMatch = originalText.match(/([\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}]+)$/u);
+  const emoji = emojiMatch ? emojiMatch[0] : "";
+  const textWithoutEmoji = emojiMatch ? originalText.slice(0, -emoji.length) : originalText;
 
+  const phrases = parser.parse(textWithoutEmoji);
+  const totalLength = textWithoutEmoji.length;
+  
+  // 分割点を全体の文字数の半分に最も近い文節の区切りにする（絵文字を除いたテキストベース）
+  const mid = totalLength / 2;
+  let splitIndex = 0;
+  let cumulative = 0;
+  let minDiff = totalLength;
+
+  for (let i = 0; i < phrases.length; i++) {
+    cumulative += phrases[i].length;
+    const diff = Math.abs(cumulative - mid);
+    if (diff <= minDiff) {
+      minDiff = diff;
+      splitIndex = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  const line1Base = phrases.slice(0, splitIndex).join("");
+  const line2Base = phrases.slice(splitIndex).join("");
+
+  // 絵文字を2行目（または1行目）の末尾に結合
+  const line1Full = line2Base.length === 0 ? line1Base + emoji : line1Base;
+  const line2Full = line2Base.length > 0 ? line2Base + emoji : "";
+
+  let charsToShow = originalText.length;
   if (segment.animation === "pop") {
-    // 最初の8フレームで1.2倍から1.0倍へポップイン
     scale = interpolate(localFrame, [0, 8], [1.2, 1], {
       extrapolateRight: "clamp",
       extrapolateLeft: "clamp",
     });
   } else if (segment.animation === "reveal") {
-    // 2フレームごとに1文字出現（カラオケ風）
-    const charsToShow = Math.max(1, Math.floor(localFrame / 2));
-    text = text.slice(0, charsToShow);
+    charsToShow = Math.max(1, Math.floor(localFrame / 2));
   }
 
+  const displayLine1 = line1Full.slice(0, charsToShow);
+  const displayLine2 = line2Full.slice(0, Math.max(0, charsToShow - line1Full.length));
+
   return (
-    <p style={({
+    <div style={({
       fontSize: `${fontSize}px`,
       color: textColor,
       fontWeight: 'bold',
@@ -165,19 +198,30 @@ const SegmentText: React.FC<{
       paintOrder: 'stroke fill',
       textShadow: '0px 4px 15px rgba(0,0,0,0.5)',
       transform: `scale(${scale})`,
-      whiteSpace: 'normal',
       wordBreak: 'keep-all',
       overflowWrap: 'anywhere',
       lineHeight: '1.4',
       margin: 0,
       padding: '0 40px'
     }) as React.CSSProperties}>
-      {parser.parse(text).map((phrase, i) => (
-        <React.Fragment key={i}>
-          {phrase}
-          <wbr />
-        </React.Fragment>
-      ))}
-    </p>
+      <div style={{ display: 'block' }}>
+        {parser.parse(displayLine1).map((phrase, i) => (
+          <React.Fragment key={i}>
+            {phrase}
+            <wbr />
+          </React.Fragment>
+        ))}
+      </div>
+      {line2Full.length > 0 && (
+        <div style={{ display: 'block' }}>
+          {parser.parse(displayLine2).map((phrase, i) => (
+            <React.Fragment key={i}>
+              {phrase}
+              <wbr />
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };

@@ -3,5 +3,5 @@ import React from "react";
 export const AlignEnd: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
-  return <div className="self-end">{children}</div>;
+  return <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>{children}</div>;
 };
