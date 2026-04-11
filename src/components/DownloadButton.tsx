@@ -33,7 +33,7 @@ export const DownloadButton: React.FC<{
         <UndoIcon></UndoIcon>
       </Button>
       <Spacing></Spacing>
-      <a href={state.url}>
+      <a href={state.url} download={state.url.split('/').pop()}>
         <Button>
           Download video
           <Spacing></Spacing>

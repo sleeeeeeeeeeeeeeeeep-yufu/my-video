@@ -2,7 +2,7 @@
 
 import { Player } from "@remotion/player";
 import type { NextPage } from "next";
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { z } from "zod";
 import { CompositionProps, defaultMyCompProps } from "../../types/constants";
 import { RenderControls } from "../components/RenderControls";
@@ -46,8 +46,31 @@ const Home: NextPage = () => {
   const [isScriptLoading, setIsScriptLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scriptInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ステートを完全に初期化する共通関数
+  const resetStates = () => {
+    localStorage.clear();
+    setInputEpisode(episode);
+    setText(episode.meta?.title || defaultMyCompProps.meta.title);
+    setVideoSrc("");
+    setOriginalFileName("");
+    setMessages([]);
+    setVideoFile(null);
+    setUploadProgress(0);
+    setIsUploading(false);
+    setIsAnalyzing(false);
+    setIsChatLoading(false);
+    setIsScriptLoading(false);
+  };
+
+  // 3. [自動スクロール] メッセージ送信時に最下部へ追従
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isChatLoading]);
 
   const inputProps: z.infer<typeof CompositionProps> = useMemo(() => {
     return {
@@ -64,9 +87,13 @@ const Home: NextPage = () => {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement> | File) => {
+    const file = event instanceof File ? event : event.target.files?.[0];
     if (!file) return;
+
+    // 全ステートをリセットしてクリーンな状態にする
+    resetStates();
+    setMessages([{ role: "assistant", content: "新しい動画を読み込みました。解析を開始してください。" }]);
     setVideoFile(file); // Store file for analysis
     try {
       // 動画の実際の長さを取得して反映
@@ -152,6 +179,25 @@ const Home: NextPage = () => {
     }
   };
 
+  // 4. [D&D] ドラッグ&ドロップ対応
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("video/")) {
+      handleFileChange(file);
+    }
+  };
+
   const sendChatMessage = async (messageContent: string, options?: { isPartial?: boolean }) => {
     if (!messageContent.trim()) return;
     const { isPartial } = options || {};
@@ -162,41 +208,27 @@ const Home: NextPage = () => {
 
     try {
       // 意図の簡易判定
-      let target: "metadata" | "segments" | "all" = isPartial ? "segments" : "all";
+      let target: "metadata" | "segments" | "all" = "segments";
       if (!isPartial) {
         const msg = messageContent.toLowerCase();
         // デザイン・設定系のキーワード
         const isTheme = /色|カラー|color|赤|青|緑|白|黒|フォント|サイズ|大きく|小さく|太字|縁取り|タイトル|背景|テーマ|雰囲気/.test(msg);
-        // 内容・編集系のキーワード（「テロップ」等の名詞はデザイン系でも使われるため除外）
+        // 内容・編集系のキーワード
         const isSegments = /台本|作成|文字|修正|タイミング|追加|削除|消して|と言って|喋り/.test(msg);
         
         if (isTheme && !isSegments) target = "metadata";
-        else if (isSegments && !isTheme) target = "segments";
+        else target = "segments";
       }
 
-      // 送信データの最小化
-      let stateToSend = inputEpisode;
-      if (target === "metadata") {
-        stateToSend = {
-          theme: inputEpisode.theme,
-          meta: inputEpisode.meta,
-          fixedTitle: inputEpisode.fixedTitle
-        };
-      } else if (target === "segments") {
-        stateToSend = {
-          segments: inputEpisode.segments
-        };
-      }
-
-      console.log(`Chat Mode: ${target}`);
+      console.log(`Chat Mode: ${target}, isPartial: ${isPartial}`);
 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: [...messages, userMessage],
-          currentEpisodeState: stateToSend,
-          isPartial: isPartial || target === "segments",
+          currentEpisodeState: inputEpisode,
+          isPartial: isPartial === true,
           target
         }),
       });
@@ -210,45 +242,20 @@ const Home: NextPage = () => {
         return;
       }
 
+      const { reply, segments, theme } = data;
+      
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.reply },
+        { role: "assistant", content: reply || "対応が完了しました。" },
       ]);
       
-      if (data.episodeJson) {
-        // パーシャルアップデート（配列のみ）かフルアップデート（オブジェクト）かを判読してマージ
-        const isArray = Array.isArray(data.episodeJson);
-        const newSegments = isArray ? data.episodeJson : data.episodeJson.segments;
-
-        setInputEpisode((prev: any) => {
-          const next = { ...prev };
-          
-          if (isArray || newSegments) {
-            next.segments = newSegments || data.episodeJson;
-          }
-          
-          if (!isArray) {
-            // オブジェクトの場合は、返ってきたキーのみをマージ
-            if (data.episodeJson.theme) {
-              next.theme = { ...next.theme, ...data.episodeJson.theme };
-            }
-            if (data.episodeJson.meta) {
-              next.meta = { ...next.meta, ...data.episodeJson.meta };
-              if (data.episodeJson.meta.title) {
-                setText(data.episodeJson.meta.title);
-              }
-            }
-            if (data.episodeJson.fixedTitle) next.fixedTitle = data.episodeJson.fixedTitle;
-          }
-          
-          return next;
-        });
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "（※データの更新は行われませんでした。もう一度詳しく指示してみてください）" },
-        ]);
+      if (segments) {
+        setInputEpisode((prev: any) => ({ ...prev, segments }));
       }
+      if (theme) {
+        setInputEpisode((prev: any) => ({ ...prev, theme: { ...prev.theme, ...theme } }));
+      }
+
     } catch (error) {
       console.error("Chat error:", error);
       setMessages((prev) => [
@@ -261,6 +268,7 @@ const Home: NextPage = () => {
   };
 
   const handleChatSend = () => {
+    if (!chatInput.trim()) return;
     sendChatMessage(chatInput);
     setChatInput("");
   };
@@ -269,33 +277,18 @@ const Home: NextPage = () => {
     scriptInputRef.current?.click();
   };
 
-  const handleScriptFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleScriptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    
-    setIsScriptLoading(true);
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: `台本「${file.name}」を読み込んでいます...テキストに基づいて構成を行います。` },
-    ]);
 
+    setIsScriptLoading(true);
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (text) {
-          const prompt = `以下の台本テキストを元に、字幕セグメントを構成・校正してください。\n\n【台本】\n${text}`;
-          await sendChatMessage(prompt, { isPartial: true });
-        }
-      } catch (error) {
-        console.error("Script process error:", error);
-        alert("台本の処理中にエラーが発生しました。");
-      } finally {
-        setIsScriptLoading(false);
-        if (scriptInputRef.current) {
-           scriptInputRef.current.value = "";
-        }
+    reader.onload = async (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        await sendChatMessage(`【台本】\n${content}`, { isPartial: true });
       }
+      setIsScriptLoading(false);
     };
     reader.onerror = () => {
       alert("ファイルの読み込みに失敗しました。");
@@ -368,9 +361,20 @@ const Home: NextPage = () => {
     }
   };
 
-
   return (
-    <div>
+    <div 
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="relative min-h-screen"
+    >
+      {isDragging && (
+        <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center border-4 border-dashed border-blue-500 pointer-events-none">
+          <div className="bg-white px-8 py-4 rounded-2xl shadow-2xl text-blue-600 font-bold text-xl">
+            動画をドロップしてアップロード
+          </div>
+        </div>
+      )}
       <div className="max-w-screen-md m-auto mb-5 px-4">
         <div className="overflow-hidden rounded-geist shadow-[0_0_200px_rgba(0,0,0,0.15)] mb-10 mt-16">
           <Player
@@ -378,8 +382,8 @@ const Home: NextPage = () => {
             inputProps={inputProps}
             durationInFrames={inputProps.meta?.durationInFrames || 1200}
             fps={inputProps.meta?.fps || 30}
-            compositionHeight={episode.meta?.resolution?.height || 1920}
-            compositionWidth={episode.meta?.resolution?.width || 1080}
+            compositionHeight={1920}
+            compositionWidth={1080}
             style={{ width: "100%" }}
             controls
             loop
@@ -459,6 +463,7 @@ const Home: NextPage = () => {
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
             {isChatLoading && (
               <div className="flex justify-start">
                 <div className="px-4 py-2 rounded-2xl text-sm bg-gray-100 text-gray-400">

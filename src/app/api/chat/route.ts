@@ -18,32 +18,52 @@ export async function POST(req: NextRequest) {
 
     // 改行、句読点、感嘆符などでテキストを分割
     const rawPhrases = cleanedScript.replace(/([。！？\n]+)/g, "$1|").split('|');
-    const phrases = rawPhrases
+    const basePhrases = rawPhrases
       .map((p: string) => p.trim())
       .filter((p: string) => {
         if (p.length === 0) return false;
-        // 先頭または全体が「インスタキャプション」を含む場合は除外
         if (p.includes("インスタキャプション")) return false;
-        // 棒線やハイフンだけのフレーズを除外
         if (/^[ー\-─\s]+$/.test(p)) return false;
         return true;
       });
+
+    // --- 【10文字分割ロジック】 ---
+    const optimizedPhrases: string[] = [];
+    basePhrases.forEach((p: string) => {
+      if (p.length <= 10) {
+        optimizedPhrases.push(p);
+      } else {
+        const subParts = p.split(/([。、！？…]+)/g).filter(Boolean);
+        const joinedSubParts: string[] = [];
+        for (let i = 0; i < subParts.length; i += 2) {
+          joinedSubParts.push(subParts[i] + (subParts[i + 1] || ""));
+        }
+
+        joinedSubParts.forEach((sub: string) => {
+          if (sub.length <= 10) {
+            optimizedPhrases.push(sub);
+          } else {
+            for (let i = 0; i < sub.length; i += 10) {
+              optimizedPhrases.push(sub.slice(i, i + 10));
+            }
+          }
+        });
+      }
+    });
 
     const oldSegments = currentEpisodeState?.segments || [];
     if (oldSegments.length === 0) {
       return NextResponse.json({ error: "既存の字幕データがありません。先に動画を解析してください。" }, { status: 400 });
     }
 
-    // 全体の開始・終了時間を取得
     const minStart = Math.min(...oldSegments.map((s: any) => s.start));
     const maxEnd = Math.max(...oldSegments.map((s: any) => s.end));
     const totalTime = Math.max(maxEnd - minStart, 1);
-    const totalLength = phrases.reduce((sum: number, p: string) => sum + p.length, 0);
+    const totalLength = optimizedPhrases.reduce((sum: number, p: string) => sum + p.length, 0);
 
     let currentStart = minStart;
-    const newSegments = phrases.map((phrase: string, idx: number) => {
-      // 文字数に応じて時間を比例配分
-      const duration = totalLength === 0 ? (totalTime / phrases.length) : (phrase.length / totalLength) * totalTime;
+    const newSegments = optimizedPhrases.map((phrase: string, idx: number) => {
+      const duration = totalLength === 0 ? (totalTime / optimizedPhrases.length) : (phrase.length / totalLength) * totalTime;
       const end = currentStart + duration;
 
       let type = "normal";
@@ -52,7 +72,7 @@ export async function POST(req: NextRequest) {
 
       if (idx === 0) {
         type = "hook"; animation = "pop"; se = "pikon";
-      } else if (idx === phrases.length - 1) {
+      } else if (idx === optimizedPhrases.length - 1) {
         type = "conclusion"; animation = "reveal";
       } else if (idx % 10 === 0) {
         type = "emphasis"; se = "chan";
@@ -73,14 +93,17 @@ export async function POST(req: NextRequest) {
       return seg;
     });
 
-    console.log(`--- Rule-based Script Processed [Phrases: ${phrases.length}] ---`);
+    console.log(`--- Rule-based Script Optimized [Phrases: ${optimizedPhrases.length}] ---`);
     return NextResponse.json({
-      reply: `台本を ${phrases.length} 個のフレーズに分割し、タイミングを割り当てました！`,
-      episodeJson: newSegments
+      reply: `台本を ${optimizedPhrases.length} 個のフレーズに最適に分割し、タイミングを割り当てました！`,
+      segments: newSegments,
+      theme: null
     });
   }
 
-  // ペイロード軽量化: AIには必要最低限の情報だけを渡す
+  // --- GPT 処理モード (モードB / モードC) ---
+  
+  // ペイロード軽量化
   const simplifySegments = (sw: any[], minimal: boolean = false) => (sw || []).map(s => {
     if (minimal) {
       return { id: s.id, start: s.start, end: s.end };
@@ -97,74 +120,50 @@ export async function POST(req: NextRequest) {
     };
   });
 
-  let baseEpisode: any = {};
   let systemPrompt = "";
 
-  if (target === "segments" || isPartial) {
-    // 【字幕修正・台本流し込みモード】
-    baseEpisode = { segments: simplifySegments(currentEpisodeState?.segments || [], !!isPartial) };
-    systemPrompt = `あなたは動画の字幕編集アシスタントです。
-指示された「台本」のテキストを、提供された「既存のタイミング枠」のすべてのIDに対し、順番通りに配分してください。
-
-【既存のタイミング枠】
-${JSON.stringify(baseEpisode.segments)}
-
-【重要ルール】
-1. 既存の id, start, end は一文字も変更しないでください。
-2. 入力された「既存のタイミング枠」に含まれる **すべての ID (例: 1番から最後のリクエスト分まで)** について、必ずテキストを割り当てて返してください。
-    - **途中で中断したり、一部だけ返したりすることは絶対に禁止します。**
-3. 返答は必ず以下の形式にする：
-REPLY:（要約）
-JSON:（修正後の 【全件揃った】 segments 配列のみを出力。例: [ {"id":1, ...}, {"id":2, ...}, ... ]）
-
-4. JSON以外の説明文・コードブロックは一切含めない。`;
-  } else if (target === "metadata") {
-    // 【テーマ・設定変更モード】
-    baseEpisode = {
+  if (target === "metadata") {
+    // 【テーマ変更モード】 (モードB)
+    const baseEpisode = {
       theme: currentEpisodeState?.theme,
-      meta: currentEpisodeState?.meta,
       fixedTitle: currentEpisodeState?.fixedTitle
     };
     systemPrompt = `あなたは動画のテーマ編集アシスタントです。
-指示に基づき、動画全体の設定（theme, meta, title）を修正してください。
+指示に基づき、動画の設定（theme）を修正してください。
 
 【現在の設定】
 ${JSON.stringify(baseEpisode)}
 
 【ルール】
-1. テロップの色(color)、フォント、タイトルの内容などを指示に従って変更してください。
-2. 返答は必ず以下の形式にする：
+1. テロップの色、フォントなどを指示に従って変更してください。
+2. 返答は必ず以下の形式にする（JSON部分はコードブロックなし・プレーンテキストで）：
 REPLY:（変更内容の要約を1文で）
-JSON:（修正後のオブジェクトのみを出力。変更したキーのみを含めても良い。例: {"theme": {"color": "red"}} ）
+JSON:（修正後の theme オブジェクトのみを出力。例: {"mainTextColor": "#FF0000"}）
 
 3. JSON以外の説明文・コードブロックは一切含めない。`;
   } else {
-    // 【全体編集モード】
-    baseEpisode = {
-      ...currentEpisodeState,
-      segments: simplifySegments(currentEpisodeState?.segments || [], false),
-      videoSrc: undefined
-    };
-    systemPrompt = `あなたは動画の総合編集アシスタントです。
-episode.json 全体を必要に応じて編集してください。
+    // 【通常チャットモード】 (モードC)
+    const baseEpisode = { segments: simplifySegments(currentEpisodeState?.segments || [], false) };
+    systemPrompt = `あなたは動画の字幕編集アシスタントです。
+指示に基づき、字幕データ（segments）を修正してください。
 
-【現在のデータ】
-${JSON.stringify(baseEpisode)}
+【現在の字幕データ】
+${JSON.stringify(baseEpisode.segments)}
 
 【ルール】
-1. 字幕とテーマの両方を指示通りに一括修正してください。
-2. 返答は必ず以下の形式にする：
-REPLY:（変更箇所の要約）
-JSON:（編集後の episode.json オブジェクト全体を出力）
+1. 既存の id, start, end は動画のタイミングに基づくため、基本的に変更しないでください。
+2. テキスト（text）や効果（animation, color, se）を指示に従って編集してください。
+3. 返答は必ず以下の形式にする（JSON部分はコードブロックなし・プレーンテキストで）：
+REPLY:（要約）
+JSON:（編集後の segments 配列全体を出力。例: [ {"id":1, ...}, {"id":2, ...} ]）
 
-3. JSON以外の説明文・省略は厳禁です。`;
+4. JSON以外の説明文・省略・コードブロックは厳禁です。`;
   }
 
   console.log(`--- Chat API Logic [Target: ${target}] ---`);
   console.log("Prompt Length:", systemPrompt.length);
 
   try {
-    const isScriptMode = isPartial || target === "segments";
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -177,9 +176,7 @@ JSON:（編集後の episode.json オブジェクト全体を出力）
           { role: "system", content: systemPrompt },
           ...messages,
         ],
-        temperature: isScriptMode ? 0 : 0.7,
-        max_tokens: isScriptMode ? 2000 : undefined,
-        response_format: { type: "json_object" },
+        temperature: 0.7,
       }),
     });
 
@@ -195,25 +192,40 @@ JSON:（編集後の episode.json オブジェクト全体を出力）
     const raw = data.choices?.[0]?.message?.content || "";
 
     console.log("--- AI Raw Content Response ---");
-    // 省略して出力（デバッグ用）
     console.log(raw.slice(0, 500) + (raw.length > 500 ? "..." : ""));
 
     const replyMatch = raw.match(/REPLY:([\s\S]*?)JSON:/);
     const jsonMatch = raw.match(/JSON:([\s\S]*)/);
 
     const reply = replyMatch ? replyMatch[1].trim() : "承知しました。";
-    let episodeJson = null;
+    let parsedJson: any = null;
 
     if (jsonMatch) {
       const jsonStr = jsonMatch[1].trim().replace(/```json\n?|\n?```/g, "");
       try {
-        episodeJson = JSON.parse(jsonStr);
+        parsedJson = JSON.parse(jsonStr);
       } catch (e) {
         console.error("JSON parsing failed:", e);
       }
     }
 
-    return NextResponse.json({ reply, episodeJson });
+    if (target === "metadata") {
+      return NextResponse.json({
+        reply,
+        segments: null,
+        theme: parsedJson || null
+      });
+    } else {
+      let segments = null;
+      if (parsedJson) {
+        segments = Array.isArray(parsedJson) ? parsedJson : (parsedJson.segments || null);
+      }
+      return NextResponse.json({
+        reply,
+        segments,
+        theme: null
+      });
+    }
   } catch (error) {
     console.error("Internal Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

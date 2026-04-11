@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
         whisperFormData.append("model", "whisper-1");
         whisperFormData.append("response_format", "verbose_json");
         whisperFormData.append("timestamp_granularities[]", "segment");
+        whisperFormData.append("timestamp_granularities[]", "word");
 
         const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
           method: "POST",
@@ -55,11 +56,47 @@ export async function POST(req: NextRequest) {
         console.log(`[Chunk ${index}] Whisper API End: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
         
         const offset = index * 30;
-        return (data.segments || []).map((seg: any) => ({
-          start: seg.start + offset,
-          end: seg.end + offset,
-          text: seg.text.trim(),
-        }));
+        const segments = data.segments || [];
+        
+        const processedSegments: any[] = [];
+        segments.forEach((seg: any) => {
+          const text = seg.text.trim();
+          if (text.length > 15) {
+            // 句読点で分割（。、！？…）
+            const parts = text.split(/([。、！？…]+)/g).filter(Boolean);
+            const joinedParts: string[] = [];
+            for (let i = 0; i < parts.length; i += 2) {
+              const phrase = parts[i] + (parts[i + 1] || "");
+              if (phrase) joinedParts.push(phrase);
+            }
+
+            if (joinedParts.length > 1) {
+              const totalChars = joinedParts.reduce((sum, p) => sum + p.length, 0);
+              const totalDuration = seg.end - seg.start;
+              let currentStart = seg.start;
+
+              joinedParts.forEach((part) => {
+                const partDuration = (part.length / totalChars) * totalDuration;
+                processedSegments.push({
+                  start: currentStart + offset,
+                  end: currentStart + partDuration + offset,
+                  text: part.trim(),
+                });
+                currentStart += partDuration;
+              });
+              return;
+            }
+          }
+          
+          // 分割不要または分割ポイントがない場合
+          processedSegments.push({
+            start: seg.start + offset,
+            end: seg.end + offset,
+            text: text,
+          });
+        });
+
+        return processedSegments;
       })
     );
     console.timeEnd("WhisperTranscription");
@@ -69,8 +106,6 @@ export async function POST(req: NextRequest) {
     console.log(`Merged ${allSegments.length} segments.`);
 
     // 2. Rule-based Enrichment (INSTANT replacement for GPT)
-    // GPT-4o-mini was taking 49s, so we use rules for basic categorization.
-    // Users can refine these via chat instructions later.
     const finalSegments = allSegments.map((seg: any, idx: number) => {
       let type = "normal";
       let animation = "pop";
@@ -84,16 +119,19 @@ export async function POST(req: NextRequest) {
         type = "conclusion";
         animation = "reveal";
       } else if (idx % 10 === 0) {
-        // Simple periodic emphasis for visual variety
         type = "emphasis";
         se = "chan";
       }
 
+      // 1フレーム精度(30fps)での整数化 + Padding（前2フレーム、後3フレーム）
+      const frameStart = Math.max(0, Math.round(seg.start * FPS) - 2);
+      const frameEnd = Math.round(seg.end * FPS) + 3;
+
       return {
         id: idx + 1,
         type,
-        start: Math.round(seg.start * FPS),
-        end: Math.round(seg.end * FPS),
+        start: frameStart,
+        end: frameEnd,
         text: seg.text,
         animation,
         position: "bottom",
@@ -111,6 +149,7 @@ export async function POST(req: NextRequest) {
         meta: {
           title: finalSegments[0]?.text || "New Episode",
           fps: FPS,
+          resolution: { width: 1080, height: 1920 }, // フォーマット固定
         },
         segments: finalSegments,
       },
