@@ -43,7 +43,7 @@ const Home: NextPage = () => {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [isScriptLoading, setIsScriptLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isAnalyzed, setIsAnalyzed] = useState(false);
+
   const [isScriptUploaded, setIsScriptUploaded] = useState(false);
   const [scriptText, setScriptText] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -65,7 +65,7 @@ const Home: NextPage = () => {
     setIsAnalyzing(false);
     setIsChatLoading(false);
     setIsScriptLoading(false);
-    setIsAnalyzed(false);
+
     setIsScriptUploaded(false);
     setScriptText("");
   };
@@ -77,7 +77,7 @@ const Home: NextPage = () => {
     setVideoFile(null);
     setMessages([]);
     setOriginalFileName("");
-    setIsAnalyzed(false);
+
     setIsScriptUploaded(false);
     setScriptText("");
   }, []);
@@ -110,7 +110,7 @@ const Home: NextPage = () => {
 
     // 動画アップロード時に古いセグメントと解析状態のみリセット
     setInputEpisode((prev: any) => ({ ...prev, segments: [], fixedTitle: "" }));
-    setIsAnalyzed(false);
+
 
     setMessages([{ role: "assistant", content: "新しい動画を読み込みました。解析を開始してください。" }]);
     setVideoFile(file); // Store file for analysis
@@ -382,7 +382,7 @@ const Home: NextPage = () => {
           ...prev,
           { role: "assistant", content: "解析が完了しました！字幕の生成が完了しました。" },
         ]);
-        setIsAnalyzed(true);
+
 
         // 台本が予約されている場合は自動的に流し込む
         if (scriptText) {
