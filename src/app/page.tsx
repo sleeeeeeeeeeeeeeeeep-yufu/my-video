@@ -52,23 +52,7 @@ const Home: NextPage = () => {
   const scriptInputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const resetStates = () => {
-    localStorage.clear();
-    setInputEpisode(episode);
-    setText("");
-    setVideoSrc("");
-    setOriginalFileName("");
-    setMessages([]);
-    setVideoFile(null);
-    setUploadProgress(0);
-    setIsUploading(false);
-    setIsAnalyzing(false);
-    setIsChatLoading(false);
-    setIsScriptLoading(false);
 
-    setIsScriptUploaded(false);
-    setScriptText("");
-  };
 
   // 初回マウント時にステートをリセット
   useEffect(() => {
@@ -110,7 +94,6 @@ const Home: NextPage = () => {
 
     // 動画アップロード時に古いセグメントと解析状態のみリセット
     setInputEpisode((prev: any) => ({ ...prev, segments: [], fixedTitle: "" }));
-
 
     setMessages([{ role: "assistant", content: "新しい動画を読み込みました。解析を開始してください。" }]);
     setVideoFile(file); // Store file for analysis
@@ -382,7 +365,6 @@ const Home: NextPage = () => {
           ...prev,
           { role: "assistant", content: "解析が完了しました！字幕の生成が完了しました。" },
         ]);
-
 
         // 台本が予約されている場合は自動的に流し込む
         if (scriptText) {
