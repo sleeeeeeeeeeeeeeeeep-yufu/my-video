@@ -403,6 +403,8 @@ const Home: NextPage = () => {
           </div>
         </div>
       )}
+
+      <div className="max-w-screen-md mx-auto px-4">
         <div className="bg-white p-6 rounded-geist shadow-sm border border-gray-100 mb-8 mt-16 overflow-hidden">
           <h3 className="text-lg font-bold mb-4 text-gray-800">
             プレビュー
@@ -431,6 +433,7 @@ const Home: NextPage = () => {
             </div>
           )}
         </div>
+      </div>
 
 
         {/* Section 1: Materials & Analysis */}
