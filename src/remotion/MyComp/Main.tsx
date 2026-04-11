@@ -144,7 +144,7 @@ const SegmentText: React.FC<{
   const originalText = (segment.text || "").replace(/\n/g, "");
   
   // 絵文字を末尾から分離（BudouXの脱落防止と改行ズレ対策）
-  const emojiMatch = originalText.match(/([\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}]+)$/u);
+  const emojiMatch = originalText.match(/([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27FF])+$/);
   const emoji = emojiMatch ? emojiMatch[0] : "";
   const textWithoutEmoji = emojiMatch ? originalText.slice(0, -emoji.length) : originalText;
 
