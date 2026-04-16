@@ -14,19 +14,52 @@ import { CompositionProps } from "../../../types/constants";
 
 const parser = loadDefaultJapaneseParser();
 
+/**
+ * カット後の秒数から、元動画の秒数へ逆算する
+ * @param afterTime カット後の秒数
+ * @param cuts カット区間データ [{start: number, end: number}]
+ * @returns 元動画の秒数
+ */
+function afterToOriginal(afterTime: number, cuts: any[]): number {
+  const originalTimeBase = afterTime;
+  let calculatedTime = afterTime;
+
+  // カットリストをソート
+  const sortedCuts = [...cuts].sort((a, b) => a.start - b.start);
+
+  for (const cut of sortedCuts) {
+    if (calculatedTime >= cut.start) {
+      calculatedTime += (cut.end - cut.start);
+    } else {
+      break;
+    }
+  }
+
+  // ここが重要：入力と出力をセットで出す
+  console.log(`[SYNC-CHECK] In: ${originalTimeBase} -> Out: ${calculatedTime}`);
+  
+  return calculatedTime;
+}
+
 export const Main = (props: z.infer<typeof CompositionProps>) => {
-  const { fixedTitle, videoSrc, segments, theme, audio } = props;
+  const { fixedTitle, videoSrc, theme, audio } = props;
+  const { segments, cuts = [] } = props as any;
   const frame = useCurrentFrame();
 
   const vSrc = (videoSrc && videoSrc.trim() !== "") ? videoSrc : "test.mp4";
   
-  // 現在のフレームに該当するセグメントを取得
+  // 現在のフレームに該当するセグメントを取得（フレーム単位で比較）
   const activeSegment = (segments || []).find((s: any) => frame >= s.start && frame < s.end);
   const zoom = activeSegment?.zoom ?? 1.0;
   
   // translate用のパーセンテージ計算 (e.g. 0.1 -> 10%)
   const translateX = (activeSegment?.zoomX || 0) * 100;
   const translateY = (activeSegment?.zoomY || 0) * 100;
+
+  // 現在のフレームがカット区間に含まれているか判定（フレーム単位で比較）
+  const isInCut = (cuts || []).some(
+    (cut: any) => frame >= cut.start && frame < cut.end
+  );
 
   return (
     <AbsoluteFill className="bg-black" style={{ fontFamily: theme.fontFamily }}>
@@ -35,19 +68,22 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
         <Audio src={staticFile(`audio/${audio.bgm}.mp3`)} volume={audio.bgmVolume} loop />
       )}
 
-      {/* 背景動画（セグメントに応じて疑似マルチカメラのズーム/パン適用） */}
       <AbsoluteFill style={{
         transform: `scale(${zoom}) translate(${translateX}%, ${translateY}%)`,
         transition: 'transform 0.1s linear'
       }}>
         {vSrc && (
-          <OffthreadVideo 
-            src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)} 
-            className="object-cover w-full h-full" 
-            volume={1}
-            crossOrigin="anonymous"
-            pauseWhenBuffering
-          />
+          <>
+            {isInCut && (
+              <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 5 }} />
+            )}
+            <OffthreadVideo
+              src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)}
+              className="object-cover w-full h-full"
+              volume={1}
+              crossOrigin="anonymous"
+            />
+          </>
         )}
       </AbsoluteFill>
 
@@ -88,7 +124,18 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
       )}
 
       {/* セグメントごとの処理（テキストと効果音） */}
-      {segments && segments.length > 0 && segments.map((segment: any) => {
+      {(() => {
+        if (segments && segments.length > 0) {
+          const sample = segments[0].start;
+          console.log("--- FINAL UNIT CHECK ---");
+          console.log("Total Cuts:", cuts?.length);
+          console.log("Sample Value:", sample);
+          console.log("Type:", typeof sample);
+          console.log("Is Integer?:", Number.isInteger(sample));
+        }
+        return null;
+      })()}
+      {segments && segments.length > 0 && segments.map((segment: any, i: number) => {
         const isCenter = segment.position === "center";
         
         let textColor = theme.mainTextColor;
@@ -102,8 +149,17 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
         const fontSize = segment.highlight ? theme.captionFontSize * 1.2 : theme.captionFontSize;
         const strokeWidth = segment.highlight ? theme.strokeWidth * 1.5 : theme.strokeWidth;
 
+        const startFrame = afterToOriginal(segment.start, cuts);
+        const endFrame = afterToOriginal(segment.end, cuts);
+        
+        const durationFrames = Math.max(1, endFrame - startFrame);
+
         return (
-          <Sequence key={segment.id} from={segment.start} durationInFrames={Math.max(1, segment.end - segment.start)}>
+          <Sequence 
+            key={segment.id || i} 
+            from={startFrame} 
+            durationInFrames={durationFrames}
+          >
             {/* SE再生（none以外の場合） */}
             {segment.se && segment.se !== "none" && (
               <Audio src={staticFile(`se/${segment.se}.mp3`)} />
@@ -117,7 +173,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
             }}>
               <SegmentText 
                 segment={segment} 
-                localFrame={frame - segment.start}
+                localFrame={frame - startFrame}
                 fontSize={fontSize} 
                 textColor={textColor} 
                 strokeColor={sColor} 
@@ -127,6 +183,13 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
           </Sequence>
         );
       })}
+      {(() => {
+        if (segments && segments.length > 0) {
+          console.log("LAST SEGMENT END FRAME:", afterToOriginal(segments[segments.length - 1].end, cuts));
+        }
+        console.log("--- DEBUG END ---");
+        return null;
+      })()}
     </AbsoluteFill>
   );
 };

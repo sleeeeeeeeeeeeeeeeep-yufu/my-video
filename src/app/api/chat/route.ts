@@ -124,7 +124,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       reply: `台本を ${finalPhrases.length} 個のフレーズに分割し、タイミングを割り当てました！`,
       segments: newSegments,
-      theme: null
+      theme: null,
+      cuts: currentEpisodeState?.cuts,
+      timeline: currentEpisodeState?.timeline
     });
   }
 
@@ -240,7 +242,9 @@ JSON:（編集後の segments 配列全体を出力。例: [ {"id":1, ...}, {"id
       return NextResponse.json({
         reply,
         segments: null,
-        theme: parsedJson || null
+        theme: parsedJson || null,
+        cuts: currentEpisodeState?.cuts,
+        timeline: currentEpisodeState?.timeline
       });
     } else {
       let segments = null;
@@ -250,7 +254,9 @@ JSON:（編集後の segments 配列全体を出力。例: [ {"id":1, ...}, {"id
       return NextResponse.json({
         reply,
         segments,
-        theme: null
+        theme: null,
+        cuts: currentEpisodeState?.cuts,
+        timeline: currentEpisodeState?.timeline
       });
     }
   } catch (error) {

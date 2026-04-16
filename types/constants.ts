@@ -56,6 +56,20 @@ export const CompositionProps = z.object({
       color: z.enum(["white", "green", "red"]).default("white"),
     })
   ).default([]),
+  cuts: z.array(
+    z.object({
+      start: z.number(),
+      end: z.number(),
+    })
+  ).default([]),
+  timeline: z.array(
+    z.object({
+      originalStart: z.number(),
+      originalEnd: z.number(),
+      newStart: z.number(),
+      duration: z.number(),
+    })
+  ).default([]),
 });
 
 export const defaultMyCompProps: z.infer<typeof CompositionProps> = {
@@ -84,6 +98,8 @@ export const defaultMyCompProps: z.infer<typeof CompositionProps> = {
   fixedTitle: "",
   videoSrc: "",
   segments: [],
+  cuts: [],
+  timeline: [],
 };
 
 export const DURATION_IN_FRAMES = 1200;

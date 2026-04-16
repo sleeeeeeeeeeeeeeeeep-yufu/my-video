@@ -355,9 +355,11 @@ const Home: NextPage = () => {
             ...prev.meta,
             ...data.episodeJson.meta,
             // 解析APIの固定値で上書きされないようにクライアントの長さを保持
-            durationInFrames: prev.meta?.durationInFrames || data.episodeJson.meta?.durationInFrames
+            // durationInFrames: data.episodeJson.meta?.durationInFrames || prev.meta?.durationInFrames
+            durationInFrames: 2940
           }
         }));
+        console.log("durationInFrames after analyze:", data.episodeJson.meta?.durationInFrames);
         if (data.episodeJson.meta?.title) {
           setText(data.episodeJson.meta.title);
         }
@@ -414,7 +416,8 @@ const Home: NextPage = () => {
             <Player
               component={Main}
               inputProps={inputProps}
-              durationInFrames={inputProps.meta?.durationInFrames || 1200}
+              // durationInFrames={inputProps.meta?.durationInFrames || 1200}
+              durationInFrames={2940}
               fps={inputProps.meta?.fps || 30}
               compositionHeight={1920}
               compositionWidth={1080}

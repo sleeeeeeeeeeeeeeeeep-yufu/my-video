@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
             }
           }
           
-          // 分割不要または分割ポイントがない場合
+        // 分割不要または分割ポイントがない場合
           processedSegments.push({
             start: seg.start + offset,
             end: seg.end + offset,
@@ -96,14 +96,70 @@ export async function POST(req: NextRequest) {
           });
         });
 
-        return processedSegments;
+        const words = data.words || [];
+        const processedWords = words.map((w: any) => ({
+          start: w.start + offset,
+          end: w.end + offset,
+          word: w.word
+        }));
+
+        return { segments: processedSegments, words: processedWords };
       })
     );
     console.timeEnd("WhisperTranscription");
 
-    // Merge all segments
-    const allSegments = transcriptions.flat();
-    console.log(`Merged ${allSegments.length} segments.`);
+    // Merge all segments and words
+    const allSegments = transcriptions.flatMap((t: any) => t.segments);
+    const allWords = transcriptions.flatMap((t: any) => t.words);
+    console.log(`Merged ${allSegments.length} segments and ${allWords.length} words.`);
+
+    // 2. 言葉のギャップからcuts配列を作成 (Gap >= 0.5s)
+    const cuts: any[] = [];
+    for (let i = 0; i < allWords.length - 1; i++) {
+        const gap = allWords[i + 1].start - allWords[i].end;
+        if (gap >= 0.5) {
+            cuts.push({
+                start: Math.round(allWords[i].end * FPS),
+                end: Math.round(allWords[i + 1].start * FPS)
+            });
+        }
+    }
+
+    // 4. keeps配列を生成
+    const keeps: any[] = [];
+    let currentPos = 0;
+    const lastFrame = Math.max(
+       ...allSegments.map((s: any) => Math.round(s.end * FPS) + 3),
+       cuts.length > 0 ? cuts[cuts.length - 1].end : 0
+    );
+
+    cuts.forEach(cut => {
+       if (cut.start > currentPos) {
+           keeps.push({ start: currentPos, end: cut.start });
+       }
+       currentPos = cut.end;
+    });
+    if (currentPos < lastFrame) {
+       keeps.push({ start: currentPos, end: lastFrame });
+    }
+
+    // 5. newStartで時間を詰める
+    let cursor = 0;
+    const timeline = keeps.map(k => {
+       const duration = k.end - k.start;
+       const seg = { originalStart: k.start, originalEnd: k.end, newStart: cursor, duration };
+       cursor += duration;
+       return seg;
+    });
+
+    console.log(`Cuts detected: ${cuts.length}`, JSON.stringify(cuts.slice(0, 3)));
+    console.log(`Timeline segments: ${timeline.length}`, JSON.stringify(timeline.slice(0, 3)));
+
+    const totalFramesAfterCut = timeline.length > 0
+      ? timeline[timeline.length - 1].newStart + timeline[timeline.length - 1].duration
+      : lastFrame;
+
+    console.log(`totalFramesAfterCut: ${totalFramesAfterCut}, original: ${lastFrame}`);
 
     // 2. Rule-based Enrichment (INSTANT replacement for GPT)
     const finalSegments = allSegments.map((seg: any, idx: number) => {
@@ -149,9 +205,12 @@ export async function POST(req: NextRequest) {
         meta: {
           title: finalSegments[0]?.text || "New Episode",
           fps: FPS,
+          durationInFrames: totalFramesAfterCut,
           resolution: { width: 1080, height: 1920 }, // フォーマット固定
         },
         segments: finalSegments,
+        cuts,
+        timeline,
       },
     });
 
