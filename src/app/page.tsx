@@ -46,6 +46,7 @@ const Home: NextPage = () => {
 
   const [pendingSegments, setPendingSegments] = useState<any[] | null>(null);
   const [pendingStrategy, setPendingStrategy] = useState<string | null>(null);
+  const [takesPacked, setTakesPacked] = useState<string>("");
   const [isScriptUploaded, setIsScriptUploaded] = useState(false);
   const [scriptText, setScriptText] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -229,13 +230,14 @@ const Home: NextPage = () => {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           messages: [...messages, userMessage],
-          currentEpisodeState: overrideSegments 
+          currentEpisodeState: overrideSegments
             ? { ...inputEpisode, segments: overrideSegments }
             : inputEpisode,
           isPartial: isPartial === true,
-          target
+          target,
+          takesPacked: takesPacked || "",
         }),
       });
       const data = await res.json();
@@ -357,6 +359,7 @@ const Home: NextPage = () => {
       
       if (data.status === "COMPLETED" && data.episodeJson) {
         const finalSegments = data.episodeJson.segments;
+        setTakesPacked(data.takesPacked || "");
         setInputEpisode((prev: any) => ({
           ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
           ...data.episodeJson, // 解析結果（segmentsなど）で更新
