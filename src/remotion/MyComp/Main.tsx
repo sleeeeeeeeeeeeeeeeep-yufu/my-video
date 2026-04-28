@@ -61,11 +61,27 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
     (cut: any) => frame >= cut.start && frame < cut.end
   );
 
+  // カット境界 30ms フェード（FADE_FRAMES = ceil(fps * 0.03)）
+  const fps = (props as any).meta?.fps ?? 30;
+  const FADE_FRAMES = Math.ceil(fps * 0.03);
+  let fadeFactor = 1;
+  for (const cut of (cuts || [])) {
+    // カット開始直前: フェードアウト
+    if (frame >= cut.start - FADE_FRAMES && frame < cut.start) {
+      fadeFactor = Math.min(fadeFactor, (cut.start - frame) / FADE_FRAMES);
+    }
+    // カット終了直後: フェードイン
+    if (frame >= cut.end && frame < cut.end + FADE_FRAMES) {
+      fadeFactor = Math.min(fadeFactor, (frame - cut.end) / FADE_FRAMES);
+    }
+  }
+  fadeFactor = Math.max(0, Math.min(1, fadeFactor));
+
   return (
     <AbsoluteFill className="bg-black" style={{ fontFamily: theme.fontFamily }}>
       {/* BGM 再生 */}
       {audio.bgm && (
-        <Audio src={staticFile(`audio/${audio.bgm}.mp3`)} volume={audio.bgmVolume} loop />
+        <Audio src={staticFile(`audio/${audio.bgm}.mp3`)} volume={audio.bgmVolume * fadeFactor} loop />
       )}
 
       <AbsoluteFill style={{
@@ -80,7 +96,7 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
             <OffthreadVideo
               src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)}
               className="object-cover w-full h-full"
-              volume={1}
+              volume={fadeFactor}
               crossOrigin="anonymous"
             />
           </>
