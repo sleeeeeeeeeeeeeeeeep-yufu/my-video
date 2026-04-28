@@ -44,6 +44,8 @@ const Home: NextPage = () => {
   const [isScriptLoading, setIsScriptLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  const [pendingSegments, setPendingSegments] = useState<any[] | null>(null);
+  const [pendingStrategy, setPendingStrategy] = useState<string | null>(null);
   const [isScriptUploaded, setIsScriptUploaded] = useState(false);
   const [scriptText, setScriptText] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -250,15 +252,22 @@ const Home: NextPage = () => {
         return;
       }
 
-      const { reply, segments, theme } = data;
-      
+      const { reply, segments, theme, needsConfirm, strategy } = data;
+
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: reply || "対応が完了しました。" },
       ]);
-      
+
       if (segments) {
-        setInputEpisode((prev: any) => ({ ...prev, segments }));
+        if (needsConfirm) {
+          // 確認待ち: segments を保留して確認UIを表示
+          setPendingSegments(segments);
+          setPendingStrategy(strategy || reply || "この構成で適用します。");
+        } else {
+          // isPartial / metadata は従来通り即適用
+          setInputEpisode((prev: any) => ({ ...prev, segments }));
+        }
       }
       if (theme) {
         setInputEpisode((prev: any) => ({ ...prev, theme: { ...prev.theme, ...theme } }));
@@ -545,6 +554,35 @@ const Home: NextPage = () => {
               <div className="flex justify-start">
                 <div className="px-4 py-2 rounded-2xl text-sm bg-gray-100 text-gray-400">
                   考え中...
+                </div>
+              </div>
+            )}
+
+            {/* 戦略確認UI */}
+            {pendingSegments && pendingStrategy && (
+              <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 text-sm">
+                <p className="font-semibold text-blue-800 mb-1">この構成で適用します。よろしいですか？</p>
+                <p className="text-blue-700 mb-3">{pendingStrategy}</p>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => {
+                      setPendingSegments(null);
+                      setPendingStrategy(null);
+                    }}
+                    className="px-4 py-1.5 rounded-lg text-sm border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={() => {
+                      setInputEpisode((prev: any) => ({ ...prev, segments: pendingSegments }));
+                      setPendingSegments(null);
+                      setPendingStrategy(null);
+                    }}
+                    className="px-4 py-1.5 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  >
+                    OK → 適用
+                  </button>
                 </div>
               </div>
             )}
