@@ -250,9 +250,107 @@ JSON:（編集後の segments 配列全体を出力。例: [ {"id":1, ...}, {"id
         timeline: currentEpisodeState?.timeline
       });
     } else {
+      // --- Self-eval ステップ（モードCのみ・最大1回再生成）---
+      let finalParsedJson = parsedJson;
+
+      if (target !== "metadata" && Array.isArray(parsedJson)) {
+        const evaluatorPrompt = `あなたは字幕データの品質検査AIです。
+以下の segments JSON を検査し、結果を指定形式で返してください。
+
+【検査対象 segments】
+${JSON.stringify(parsedJson)}
+
+【検査項目】
+1. 全セグメントに id / start / end / text が存在するか
+2. text が空文字・null・undefined でないか
+3. start < end になっているか（start >= end は不正）
+4. id が 1 からの連番になっているか
+
+【返答形式】
+問題なし の場合:
+EVAL: OK
+
+問題あり の場合:
+EVAL: NG
+REASON: （問題の概要を1文・日本語で。例: id=3 の text が空文字です）
+
+※ JSON・コードブロック・説明文は一切含めないこと`;
+
+        try {
+          const evalResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: evaluatorPrompt }],
+              temperature: 0,
+            }),
+          });
+
+          const evalData = await evalResponse.json();
+          const evalRaw = evalData.choices?.[0]?.message?.content || "";
+          console.log("--- Self-eval Result ---");
+          console.log(evalRaw);
+
+          const isNG = evalRaw.includes("EVAL: NG");
+          const reasonMatch = evalRaw.match(/REASON:\s*(.+)/);
+          const evalReason = reasonMatch ? reasonMatch[1].trim() : "不明なエラー";
+
+          if (isNG) {
+            console.log(`Self-eval NG: ${evalReason} → 再生成開始`);
+
+            const retryMessages = [
+              { role: "system", content: systemPrompt },
+              ...messages,
+              { role: "assistant", content: raw },
+              {
+                role: "user",
+                content: `前回の出力に問題がありました。再度正しい segments JSON を出力してください。\n問題: ${evalReason}`
+              }
+            ];
+
+            const retryResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: retryMessages,
+                temperature: 0.7,
+              }),
+            });
+
+            const retryData = await retryResponse.json();
+            const retryRaw = retryData.choices?.[0]?.message?.content || "";
+            const retryJsonMatch = retryRaw.match(/JSON:([\s\S]*)/);
+
+            if (retryJsonMatch) {
+              try {
+                const retryStr = retryJsonMatch[1].trim().replace(/```json\n?|\n?```/g, "");
+                finalParsedJson = JSON.parse(retryStr);
+                console.log("Self-eval retry succeeded.");
+              } catch (e) {
+                console.error("Retry JSON parse failed. Using first parsedJson:", e);
+                // 上書き失敗時は1回目の parsedJson をそのまま使用
+              }
+            }
+          } else {
+            console.log("Self-eval OK.");
+          }
+        } catch (e) {
+          console.error("Self-eval error (skipped):", e);
+          // eval 自体が失敗した場合は1回目の parsedJson をそのまま使用
+        }
+      }
+
       let segments = null;
-      if (parsedJson) {
-        segments = Array.isArray(parsedJson) ? parsedJson : (parsedJson.segments || null);
+      if (finalParsedJson) {
+        segments = Array.isArray(finalParsedJson) ? finalParsedJson : (finalParsedJson.segments || null);
       }
       return NextResponse.json({
         reply,
