@@ -113,6 +113,16 @@ export async function POST(req: NextRequest) {
     const allWords = transcriptions.flatMap((t: any) => t.words);
     console.log(`Merged ${allSegments.length} segments and ${allWords.length} words.`);
 
+    // takes_packed: 全 processedSegments をマージした allSegments（秒単位）から生成
+    // 形式: [開始秒-終了秒] テキスト
+    // 用途:
+    //   - chat/route.ts の systemPrompt へコンテキストとして渡す
+    //   - APIレスポンスに追加して UI側で利用する
+    //   - LLM への台本解析・字幕修正指示のベースとして使用する
+    const takesPacked = allSegments
+      .map((seg: any) => `[${seg.start.toFixed(2)}-${seg.end.toFixed(2)}] ${seg.text}`)
+      .join("\n");
+
     // 2. 言葉のギャップからcuts配列を作成 (Gap >= 0.5s)
     const cuts: any[] = [];
     for (let i = 0; i < allWords.length - 1; i++) {
@@ -183,11 +193,23 @@ export async function POST(req: NextRequest) {
       const frameStart = Math.max(0, Math.round(seg.start * FPS) - 2);
       const frameEnd = Math.round(seg.end * FPS) + 3;
 
+      // 元動画フレーム → カット後フレームへ変換
+      const toAfterFrame = (x: number): number => {
+        const found = timeline.find(t => x >= t.originalStart && x < t.originalEnd);
+        if (found) return found.newStart + (x - found.originalStart);
+        // keep区間外（カット区間内またはtimeline末端超過）はフォールバック
+        if (timeline.length === 0) return x;
+        const last = timeline[timeline.length - 1];
+        return last.newStart + last.duration;
+      };
+      const afterStart = toAfterFrame(frameStart);
+      const afterEnd   = toAfterFrame(frameEnd);
+
       return {
         id: idx + 1,
         type,
-        start: frameStart,
-        end: frameEnd,
+        start: afterStart,
+        end: afterEnd,
         text: seg.text,
         animation,
         position: "bottom",
@@ -212,6 +234,7 @@ export async function POST(req: NextRequest) {
         cuts,
         timeline,
       },
+      takesPacked,
     });
 
   } catch (error) {
