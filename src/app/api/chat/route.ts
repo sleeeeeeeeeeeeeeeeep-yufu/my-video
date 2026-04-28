@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const { messages, currentEpisodeState, isPartial, target = "all" } = await req.json();
+  const { messages, currentEpisodeState, isPartial, target = "all", takesPacked = "" } = await req.json();
 
   if (isPartial) {
     // ---- 【ルールベース台本割り当てモード (GPT不要, 即時実行)】 ----
@@ -178,6 +178,9 @@ JSON:（修正後の theme オブジェクトのみを出力。例: {"mainTextCo
 
 【現在の字幕データ】
 ${JSON.stringify(baseEpisode.segments)}
+
+【元音声テキスト（参考・秒単位タイミング）】
+${takesPacked || "（なし）"}
 
 【ルール】
 1. 既存の id, start, end は動画のタイミングに基づくため、基本的に変更しないでください。
