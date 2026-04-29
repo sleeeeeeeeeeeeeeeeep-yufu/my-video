@@ -47,6 +47,9 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
   const frame = useCurrentFrame();
 
   const vSrc = (videoSrc && videoSrc.trim() !== "") ? videoSrc : "test.mp4";
+
+  // cut_base系動画の場合はカット後フレームをそのまま使う
+  const cutBaseMode = vSrc.includes("/cut_base") || vSrc.includes("cut_base_");
   
   // 現在のフレームに該当するセグメントを取得（フレーム単位で比較）
   const activeSegment = (segments || []).find((s: any) => frame >= s.start && frame < s.end);
@@ -55,11 +58,6 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
   // translate用のパーセンテージ計算 (e.g. 0.1 -> 10%)
   const translateX = (activeSegment?.zoomX || 0) * 100;
   const translateY = (activeSegment?.zoomY || 0) * 100;
-
-  // 現在のフレームがカット区間に含まれているか判定（フレーム単位で比較）
-  const isInCut = (cuts || []).some(
-    (cut: any) => frame >= cut.start && frame < cut.end
-  );
 
   // カット境界 30ms フェード（FADE_FRAMES = ceil(fps * 0.03)）
   const fps = (props as any).meta?.fps ?? 30;
@@ -89,17 +87,12 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
         transition: 'transform 0.1s linear'
       }}>
         {vSrc && (
-          <>
-            {isInCut && (
-              <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 5 }} />
-            )}
-            <OffthreadVideo
-              src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)}
-              className="object-cover w-full h-full"
-              volume={fadeFactor}
-              crossOrigin="anonymous"
-            />
-          </>
+          <OffthreadVideo
+            src={vSrc.startsWith('http') ? vSrc : staticFile(vSrc)}
+            className="object-cover w-full h-full"
+            volume={fadeFactor}
+            crossOrigin="anonymous"
+          />
         )}
       </AbsoluteFill>
 
@@ -165,9 +158,9 @@ export const Main = (props: z.infer<typeof CompositionProps>) => {
         const fontSize = segment.highlight ? theme.captionFontSize * 1.2 : theme.captionFontSize;
         const strokeWidth = segment.highlight ? theme.strokeWidth * 1.5 : theme.strokeWidth;
 
-        const startFrame = afterToOriginal(segment.start, cuts);
-        const endFrame = afterToOriginal(segment.end, cuts);
-        
+        const startFrame = cutBaseMode ? segment.start : afterToOriginal(segment.start, cuts);
+        const endFrame   = cutBaseMode ? segment.end   : afterToOriginal(segment.end, cuts);
+
         const durationFrames = Math.max(1, endFrame - startFrame);
 
         return (
