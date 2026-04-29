@@ -87,6 +87,11 @@ const Home: NextPage = () => {
     };
   }, [inputEpisode, text, videoSrc]);
 
+  useEffect(() => {
+    console.log("[debug] videoSrc state:", videoSrc);
+    console.log("[debug] inputProps.videoSrc:", inputProps.videoSrc);
+  }, [videoSrc, inputProps.videoSrc]);
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
@@ -360,15 +365,29 @@ const Home: NextPage = () => {
       if (data.status === "COMPLETED" && data.episodeJson) {
         const finalSegments = data.episodeJson.segments;
         setTakesPacked(data.takesPacked || "");
+        if (data.episodeJson.timeline) {
+          try {
+            const stRes = await fetch("/api/save-timeline", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ timeline: data.episodeJson.timeline, videoPath: videoSrc }),
+            });
+            const stData = await stRes.json();
+            if (stData.cutBaseUrl) {
+              setVideoSrc(stData.cutBaseUrl);
+              console.log("[save-timeline] videoSrc switched to:", stData.cutBaseUrl);
+            }
+          } catch (e) {
+            console.error("[save-timeline] fetch error:", e);
+          }
+        }
         setInputEpisode((prev: any) => ({
           ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
           ...data.episodeJson, // 解析結果（segmentsなど）で更新
           meta: {
             ...prev.meta,
             ...data.episodeJson.meta,
-            // 解析APIの固定値で上書きされないようにクライアントの長さを保持
-            // durationInFrames: data.episodeJson.meta?.durationInFrames || prev.meta?.durationInFrames
-            durationInFrames: 2940
+            durationInFrames: data.episodeJson.meta?.durationInFrames || prev.meta?.durationInFrames || 2940
           }
         }));
         console.log("durationInFrames after analyze:", data.episodeJson.meta?.durationInFrames);
@@ -426,10 +445,10 @@ const Home: NextPage = () => {
           <div className="rounded-geist overflow-hidden border border-gray-100 shadow-[0_0_200px_rgba(0,0,0,0.15)]">
             {videoSrc ? (
             <Player
+              key={inputProps.videoSrc || "no-video"}
               component={Main}
               inputProps={inputProps}
-              // durationInFrames={inputProps.meta?.durationInFrames || 1200}
-              durationInFrames={2940}
+              durationInFrames={inputProps.meta?.durationInFrames || 2940}
               fps={inputProps.meta?.fps || 30}
               compositionHeight={1920}
               compositionWidth={1080}
