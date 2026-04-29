@@ -37,3 +37,7 @@ next-env.d.ts
 out/
 .env
 build
+
+# generated video files
+public/cut_base*.mp4
+tmp/
