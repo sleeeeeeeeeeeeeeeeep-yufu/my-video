@@ -655,6 +655,99 @@ ${JSON.stringify(indexedWords, null, 2)}
           });
           writeFileSync(resolve(cpTmp, "debug-cut-proposal-eval.txt"), evalTxtLines.join("\n"), { encoding: "utf8" });
           console.log("[DEBUG] cut-proposal-eval saved.");
+
+          // --- refined proposal dry-run ---
+          try {
+            const evalMap = new Map(evalDecisions.map((d: any) => [d.index, d]));
+            type RefinedSeg = {
+              index: number; sourceIndexes: number[]; decisionApplied: string;
+              originalStartSec?: number; originalEndSec?: number;
+              startSec: number; endSec: number; durationSec: number; newStartSec: number;
+              startFrame: number; endFrame: number; newStartFrame: number; durationFrame: number;
+              text: string;
+            };
+
+            // 1. apply decisions
+            const applied: RefinedSeg[] = [];
+            for (const p of proposal) {
+              const ev = evalMap.get(p.index);
+              const dec = ev?.decision ?? "keep";
+              if (dec === "drop") continue;
+
+              let startSec = p.startSec;
+              let endSec   = p.endSec;
+              let text     = p.text;
+              let decisionApplied = "keep";
+              let originalStartSec: number | undefined;
+              let originalEndSec: number | undefined;
+
+              if (dec === "shorten" && ev?.shortenSuggestion) {
+                const ss = ev.shortenSuggestion;
+                const newDur = (ss.suggestedEndSec ?? endSec) - (ss.suggestedStartSec ?? startSec);
+                if (newDur >= 1.5) {
+                  originalStartSec = startSec;
+                  originalEndSec   = endSec;
+                  startSec = ss.suggestedStartSec ?? startSec;
+                  endSec   = ss.suggestedEndSec   ?? endSec;
+                  text     = ss.keepText || text;
+                  decisionApplied  = "shorten";
+                } else {
+                  decisionApplied = "keep_short_invalid";
+                }
+              }
+
+              applied.push({
+                index: p.index, sourceIndexes: p.sourceIndexes, decisionApplied,
+                ...(originalStartSec != null ? { originalStartSec, originalEndSec } : {}),
+                startSec, endSec, durationSec: endSec - startSec,
+                newStartSec: 0, startFrame: Math.round(startSec * FPS), endFrame: Math.round(endSec * FPS),
+                newStartFrame: 0, durationFrame: Math.round((endSec - startSec) * FPS), text,
+              });
+            }
+
+            // 2. overlap merge
+            const rDeduped: RefinedSeg[] = [];
+            for (const seg of applied) {
+              if (rDeduped.length > 0 && seg.startSec <= rDeduped[rDeduped.length - 1].endSec) {
+                const prev = rDeduped[rDeduped.length - 1];
+                prev.endSec = Math.max(prev.endSec, seg.endSec);
+                prev.text += " " + seg.text;
+                prev.sourceIndexes.push(...seg.sourceIndexes);
+                prev.durationSec  = prev.endSec - prev.startSec;
+                prev.endFrame     = Math.round(prev.endSec * FPS);
+                prev.durationFrame = Math.round(prev.durationSec * FPS);
+              } else {
+                rDeduped.push({ ...seg });
+              }
+            }
+
+            // 3. newStart再計算
+            let rCursor = 0;
+            for (const seg of rDeduped) {
+              seg.newStartSec   = +rCursor.toFixed(3);
+              seg.newStartFrame = Math.round(rCursor * FPS);
+              seg.durationSec   = +(seg.endSec - seg.startSec).toFixed(3);
+              seg.durationFrame = Math.round(seg.durationSec * FPS);
+              seg.startSec      = +seg.startSec.toFixed(3);
+              seg.endSec        = +seg.endSec.toFixed(3);
+              rCursor += seg.durationSec;
+            }
+
+            writeFileSync(
+              resolve(cpTmp, "debug-cut-proposal-refined.json"),
+              JSON.stringify({ generatedAt: new Date().toISOString(), count: rDeduped.length, totalSec: +rCursor.toFixed(3), proposal: rDeduped }, null, 2),
+              { encoding: "utf8" }
+            );
+            const rTxtLines = rDeduped.map(p =>
+              `${p.index}[${p.decisionApplied}]: [${p.startSec}-${p.endSec}s] dur=${p.durationSec}s newStart=${p.newStartSec}s | ${(p.text || "").replace(/[\r\n\t]+/g, " ").slice(0, 80)}`
+            );
+            writeFileSync(resolve(cpTmp, "debug-cut-proposal-refined.txt"), rTxtLines.join("\n"), { encoding: "utf8" });
+            console.log(`[DEBUG] cut-proposal-refined: ${rDeduped.length} segments, total=${rCursor.toFixed(1)}s`);
+          } catch (refinedErr) {
+            console.error("[DEBUG] cut-proposal-refined error:", (refinedErr as Error).message);
+          }
+          // --- end refined proposal dry-run ---
+
         } else {
           console.error("[DEBUG] cut-proposal-eval API error:", evalRes.status);
         }
