@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const FPS = 30;
+const ANALYZE_DEBUG = process.env.ANALYZE_DEBUG === "true";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 export async function POST(req: NextRequest) {
@@ -274,7 +275,7 @@ export async function POST(req: NextRequest) {
     // --- END DEBUG ---
 
     // --- DEBUG ONLY: sentence-level LLM dry-run → tmp/debug-sentence-llm-decisions.* ---
-    try {
+    if (ANALYZE_DEBUG) try {
       const sentenceCandidates = allSegments.map((seg: any, i: number) => ({
         index: i,
         startSec: +seg.start.toFixed(3),
@@ -336,8 +337,9 @@ ${JSON.stringify(sentenceCandidates, null, 2)}
     }
     // --- END DEBUG sentence LLM ---
 
+
     // --- DEBUG ONLY: LLM dry-run cut decisions → tmp/debug-llm-cut-decisions.json ---
-    try {
+    if (ANALYZE_DEBUG) try {
       const candidates = timeline.map((t: any, i: number) => {
         const startSec = t.originalStart / FPS;
         const endSec   = t.originalEnd   / FPS;
@@ -400,7 +402,7 @@ ${JSON.stringify(candidates, null, 2)}
     // --- END DEBUG LLM ---
 
     // --- DEBUG ONLY: tmp/debug-cut-proposal.* ---
-    try {
+    if (ANALYZE_DEBUG) try {
       const cpTmp = resolve(process.cwd(), "tmp");
       mkdirSync(cpTmp, { recursive: true });
 
@@ -743,6 +745,36 @@ ${JSON.stringify(indexedWords, null, 2)}
             );
             writeFileSync(resolve(cpTmp, "debug-cut-proposal-refined.txt"), rTxtLines.join("\n"), { encoding: "utf8" });
             console.log(`[DEBUG] cut-proposal-refined: ${rDeduped.length} segments, total=${rCursor.toFixed(1)}s`);
+
+            // --- refined timeline dry-run ---
+            const refinedTimeline = rDeduped.map(p => ({
+              index: p.index,
+              sourceIndexes: p.sourceIndexes,
+              decisionApplied: p.decisionApplied,
+              originalStart: p.startFrame,
+              originalEnd:   p.endFrame,
+              newStart:      p.newStartFrame,
+              duration:      p.durationFrame,
+              originalStartSec: p.startSec,
+              originalEndSec:   p.endSec,
+              newStartSec:      p.newStartSec,
+              durationSec:      p.durationSec,
+              text: (p.text || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").slice(0, 80),
+            }));
+            const lastRt = refinedTimeline[refinedTimeline.length - 1];
+            const refinedDurationInFrames = lastRt ? lastRt.newStart + lastRt.duration : 0;
+            writeFileSync(
+              resolve(cpTmp, "debug-refined-timeline.json"),
+              JSON.stringify({ generatedAt: new Date().toISOString(), count: refinedTimeline.length, durationInFrames: refinedDurationInFrames, timeline: refinedTimeline }, null, 2),
+              { encoding: "utf8" }
+            );
+            const rtTxtLines = refinedTimeline.map(t =>
+              `${t.index}[${t.decisionApplied}]: ${t.originalStart}-${t.originalEnd} -> ${t.newStart} dur=${t.duration} | ${t.text}`
+            );
+            writeFileSync(resolve(cpTmp, "debug-refined-timeline.txt"), rtTxtLines.join("\n"), { encoding: "utf8" });
+            console.log(`[DEBUG] refined-timeline: ${refinedTimeline.length} entries, durationInFrames=${refinedDurationInFrames}`);
+            // --- end refined timeline dry-run ---
+
           } catch (refinedErr) {
             console.error("[DEBUG] cut-proposal-refined error:", (refinedErr as Error).message);
           }
