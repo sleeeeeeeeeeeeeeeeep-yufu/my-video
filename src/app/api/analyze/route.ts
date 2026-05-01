@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 const FPS = 30;
 const ANALYZE_DEBUG = process.env.ANALYZE_DEBUG === "true";
+const USE_REFINED_TIMELINE = process.env.USE_REFINED_TIMELINE === "true";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 export async function POST(req: NextRequest) {
@@ -275,7 +276,7 @@ export async function POST(req: NextRequest) {
     // --- END DEBUG ---
 
     // --- DEBUG ONLY: sentence-level LLM dry-run → tmp/debug-sentence-llm-decisions.* ---
-    if (ANALYZE_DEBUG) try {
+    if (ANALYZE_DEBUG || USE_REFINED_TIMELINE) try {
       const sentenceCandidates = allSegments.map((seg: any, i: number) => ({
         index: i,
         startSec: +seg.start.toFixed(3),
@@ -339,7 +340,7 @@ ${JSON.stringify(sentenceCandidates, null, 2)}
 
 
     // --- DEBUG ONLY: LLM dry-run cut decisions → tmp/debug-llm-cut-decisions.json ---
-    if (ANALYZE_DEBUG) try {
+    if (ANALYZE_DEBUG || USE_REFINED_TIMELINE) try {
       const candidates = timeline.map((t: any, i: number) => {
         const startSec = t.originalStart / FPS;
         const endSec   = t.originalEnd   / FPS;
@@ -401,8 +402,12 @@ ${JSON.stringify(candidates, null, 2)}
     }
     // --- END DEBUG LLM ---
 
+    let refinedTimelineForResponse: any[] | null = null;
+    let refinedSegmentsForResponse: any[] | null = null;
+    let refinedDurationForResponse: number | null = null;
+
     // --- DEBUG ONLY: tmp/debug-cut-proposal.* ---
-    if (ANALYZE_DEBUG) try {
+    if (ANALYZE_DEBUG || USE_REFINED_TIMELINE) try {
       const cpTmp = resolve(process.cwd(), "tmp");
       mkdirSync(cpTmp, { recursive: true });
 
@@ -765,6 +770,13 @@ ${JSON.stringify(indexedWords, null, 2)}
             }));
             const lastRt = refinedTimeline[refinedTimeline.length - 1];
             const refinedDurationInFrames = lastRt ? lastRt.newStart + lastRt.duration : 0;
+            refinedTimelineForResponse = refinedTimeline.map((t: any) => ({
+              originalStart: t.originalStart,
+              originalEnd:   t.originalEnd,
+              newStart:      t.newStart,
+              duration:      t.duration,
+            }));
+            refinedDurationForResponse = refinedDurationInFrames;
             writeFileSync(
               resolve(cpTmp, "debug-refined-timeline.json"),
               JSON.stringify({ generatedAt: new Date().toISOString(), count: refinedTimeline.length, durationInFrames: refinedDurationInFrames, timeline: refinedTimeline }, null, 2),
@@ -883,6 +895,7 @@ ${JSON.stringify(indexedWords, null, 2)}
                   if (i > 0 && s.start < v2Segments[i - 1].end) v2OverlapCount++;
                 }
                 const v2LastEnd = v2Cursor;
+                refinedSegmentsForResponse = v2Segments;
 
                 writeFileSync(
                   resolve(cpTmp, "debug-refined-finalsegments-v2.json"),
@@ -1083,18 +1096,53 @@ ${JSON.stringify(indexedWords, null, 2)}
     }
     // --- END DEBUG ---
 
+    const useRefinedOutput =
+      USE_REFINED_TIMELINE &&
+      refinedTimelineForResponse !== null &&
+      refinedSegmentsForResponse !== null &&
+      refinedDurationForResponse !== null;
+
+    const outSegments       = useRefinedOutput ? refinedSegmentsForResponse! : finalSegments;
+    const outTimeline       = useRefinedOutput ? refinedTimelineForResponse! : timeline;
+    const outCuts           = useRefinedOutput ? [] : cuts;
+    const outDurationInFrames = useRefinedOutput ? refinedDurationForResponse! : totalFramesAfterCut;
+
+    console.log(`useRefinedOutput: ${useRefinedOutput}`);
+    try {
+      const selTmpDir = resolve(process.cwd(), "tmp");
+      mkdirSync(selTmpDir, { recursive: true });
+      writeFileSync(
+        resolve(selTmpDir, "debug-response-selection.json"),
+        JSON.stringify({
+          generatedAt: new Date().toISOString(),
+          USE_REFINED_TIMELINE,
+          ANALYZE_DEBUG,
+          useRefinedOutput,
+          segmentsCount: outSegments.length,
+          timelineCount: outTimeline.length,
+          cutsCount: outCuts.length,
+          durationInFrames: outDurationInFrames,
+          firstSegmentText: outSegments[0]?.text || null,
+          lastSegmentEnd: outSegments[outSegments.length - 1]?.end ?? null,
+        }, null, 2),
+        { encoding: "utf8" }
+      );
+    } catch (selErr) {
+      console.error("[DEBUG] debug-response-selection write error:", (selErr as Error).message);
+    }
+
     return NextResponse.json({
       status: "COMPLETED",
       episodeJson: {
         meta: {
-          title: finalSegments[0]?.text || "New Episode",
+          title: outSegments[0]?.text || "New Episode",
           fps: FPS,
-          durationInFrames: totalFramesAfterCut,
+          durationInFrames: outDurationInFrames,
           resolution: { width: 1080, height: 1920 }, // フォーマット固定
         },
-        segments: finalSegments,
-        cuts,
-        timeline,
+        segments: outSegments,
+        cuts: outCuts,
+        timeline: outTimeline,
       },
       takesPacked,
     });
