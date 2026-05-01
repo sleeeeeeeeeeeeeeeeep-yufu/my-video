@@ -920,6 +920,38 @@ ${JSON.stringify(indexedWords, null, 2)}
                 ];
                 writeFileSync(resolve(cpTmp, "debug-refined-finalsegments-diff.txt"), diffLines.join("\n"), { encoding: "utf8" });
                 console.log(`[DEBUG] refined-finalsegments-diff written`);
+
+                // --- dry-run: cut-base-mode-simulation (cuts=[]) ---
+                const simAfterToOriginal = (afterTime: number, simCuts: any[]): number => {
+                  if (!simCuts || simCuts.length === 0) return afterTime;
+                  const sortedCuts = [...simCuts].sort((a: any, b: any) => a.start - b.start);
+                  let offset = 0;
+                  for (const cut of sortedCuts) {
+                    const cutDuration = cut.end - cut.start;
+                    if (afterTime + offset < cut.start) break;
+                    offset += cutDuration;
+                  }
+                  return afterTime + offset;
+                };
+                const simSegments = v2Segments.map((s: any) => {
+                  const mappedStart = simAfterToOriginal(s.start, []);
+                  const mappedEnd   = simAfterToOriginal(s.end,   []);
+                  return { id: s.id, start: s.start, end: s.end, mappedStart, mappedEnd, startMatches: mappedStart === s.start, endMatches: mappedEnd === s.end, text: s.text };
+                });
+                const mismatchCount = simSegments.filter((s: any) => !s.startMatches || !s.endMatches).length;
+                writeFileSync(
+                  resolve(cpTmp, "debug-cut-base-mode-simulation.json"),
+                  JSON.stringify({ generatedAt: new Date().toISOString(), count: simSegments.length, mismatchCount, allIdentity: mismatchCount === 0, segments: simSegments }, null, 2),
+                  { encoding: "utf8" }
+                );
+                writeFileSync(
+                  resolve(cpTmp, "debug-cut-base-mode-simulation.txt"),
+                  simSegments.map((s: any) => `${s.id}: ${s.start}-${s.end} -> ${s.mappedStart}-${s.mappedEnd} match=${s.startMatches && s.endMatches} | ${s.text}`).join("\n"),
+                  { encoding: "utf8" }
+                );
+                console.log(`[DEBUG] cut-base-mode-simulation: allIdentity=${mismatchCount === 0}, mismatchCount=${mismatchCount}`);
+                // --- end dry-run: cut-base-mode-simulation ---
+
               } catch (v2Err) {
                 console.error("[DEBUG] refined-finalsegments-v2 error:", (v2Err as Error).message);
               }
