@@ -382,24 +382,29 @@ const Home: NextPage = () => {
             console.error("[save-timeline] fetch error:", e);
           }
         }
+        const mergedEpisode = {
+          ...inputEpisode,
+          ...data.episodeJson,
+          theme: data.episodeJson.theme || inputEpisode.theme || episode.theme,
+          audio: data.episodeJson.audio || inputEpisode.audio || episode.audio,
+          videoSrc: data.episodeJson.videoSrc || videoSrc || inputEpisode.videoSrc || episode.videoSrc,
+          fixedTitle: data.episodeJson.fixedTitle || inputEpisode.fixedTitle || episode.fixedTitle || "",
+          meta: {
+            ...inputEpisode.meta,
+            ...data.episodeJson.meta,
+            durationInFrames: data.episodeJson.meta?.durationInFrames || inputEpisode.meta?.durationInFrames || 2940,
+          },
+        };
         try {
           await fetch("/api/save-episode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ episodeJson: data.episodeJson }),
+            body: JSON.stringify({ episodeJson: mergedEpisode }),
           });
         } catch (e) {
           console.error("[save-episode] fetch error:", e);
         }
-        setInputEpisode((prev: any) => ({
-          ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
-          ...data.episodeJson, // 解析結果（segmentsなど）で更新
-          meta: {
-            ...prev.meta,
-            ...data.episodeJson.meta,
-            durationInFrames: data.episodeJson.meta?.durationInFrames || prev.meta?.durationInFrames || 2940
-          }
-        }));
+        setInputEpisode(mergedEpisode);
         console.log("durationInFrames after analyze:", data.episodeJson.meta?.durationInFrames);
         if (data.episodeJson.meta?.title) {
           setText(data.episodeJson.meta.title);
