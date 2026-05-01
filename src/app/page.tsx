@@ -381,6 +381,15 @@ const Home: NextPage = () => {
             console.error("[save-timeline] fetch error:", e);
           }
         }
+        try {
+          await fetch("/api/save-episode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ episodeJson: data.episodeJson }),
+          });
+        } catch (e) {
+          console.error("[save-episode] fetch error:", e);
+        }
         setInputEpisode((prev: any) => ({
           ...prev, // 既存の theme, fixedTitle, videoSrc 等を維持
           ...data.episodeJson, // 解析結果（segmentsなど）で更新
