@@ -325,6 +325,7 @@ const Home: NextPage = () => {
       setIsScriptLoading(false);
     };
     reader.readAsText(file);
+    e.currentTarget.value = "";
   };
 
   const handleAnalyze = async () => {
