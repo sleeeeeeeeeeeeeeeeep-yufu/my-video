@@ -725,14 +725,16 @@ ${JSON.stringify(indexedWords, null, 2)}
 
             // 3. newStart再計算
             let rCursor = 0;
+            let rFrameCursor = 0;
             for (const seg of rDeduped) {
               seg.newStartSec   = +rCursor.toFixed(3);
-              seg.newStartFrame = Math.round(rCursor * FPS);
               seg.durationSec   = +(seg.endSec - seg.startSec).toFixed(3);
               seg.durationFrame = Math.round(seg.durationSec * FPS);
+              seg.newStartFrame = rFrameCursor;
               seg.startSec      = +seg.startSec.toFixed(3);
               seg.endSec        = +seg.endSec.toFixed(3);
-              rCursor += seg.durationSec;
+              rCursor      += seg.durationSec;
+              rFrameCursor += seg.durationFrame;
             }
 
             writeFileSync(
@@ -774,6 +776,159 @@ ${JSON.stringify(indexedWords, null, 2)}
             writeFileSync(resolve(cpTmp, "debug-refined-timeline.txt"), rtTxtLines.join("\n"), { encoding: "utf8" });
             console.log(`[DEBUG] refined-timeline: ${refinedTimeline.length} entries, durationInFrames=${refinedDurationInFrames}`);
             // --- end refined timeline dry-run ---
+
+            // --- dry-run: refined-finalsegments ---
+            try {
+              const rtToAfterFrameStart = (x: number): number => {
+                const found = refinedTimeline.find(t => x >= t.originalStart && x < t.originalEnd);
+                if (found) return found.newStart + (x - found.originalStart);
+                if (x < refinedTimeline[0].originalStart) return 0;
+                if (x >= refinedTimeline[refinedTimeline.length - 1].originalEnd) return refinedDurationInFrames;
+                const next = refinedTimeline.find(t => t.originalStart > x);
+                return next ? next.newStart : refinedDurationInFrames;
+              };
+              const rtToAfterFrameEnd = (x: number): number => {
+                const found = refinedTimeline.find(t => x >= t.originalStart && x < t.originalEnd);
+                if (found) return found.newStart + (x - found.originalStart);
+                if (x < refinedTimeline[0].originalStart) return 0;
+                if (x >= refinedTimeline[refinedTimeline.length - 1].originalEnd) return refinedDurationInFrames;
+                let prev = refinedTimeline[0];
+                for (const t of refinedTimeline) {
+                  if (t.originalEnd <= x) prev = t;
+                  else break;
+                }
+                return prev.newStart + prev.duration;
+              };
+
+              const rtKept: any[] = [];
+              const rtDropped: any[] = [];
+              for (let idx = 0; idx < allSegments.length; idx++) {
+                const seg = allSegments[idx];
+                const frameStart = Math.max(0, Math.round(seg.start * FPS) - 2);
+                const frameEnd   = Math.round(seg.end * FPS) + 3;
+                const afterStart = rtToAfterFrameStart(frameStart);
+                const afterEnd   = rtToAfterFrameEnd(frameEnd);
+                const text = (seg.text || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").slice(0, 80);
+                if (afterEnd <= afterStart) {
+                  rtDropped.push({ id: idx + 1, text, originalStart: frameStart, originalEnd: frameEnd, reason: "afterEnd <= afterStart" });
+                } else {
+                  rtKept.push({ id: idx + 1, text, originalStart: frameStart, originalEnd: frameEnd, refinedStart: afterStart, refinedEnd: afterEnd, duration: afterEnd - afterStart, dropped: false });
+                }
+              }
+
+              let invalidDurationCount = 0;
+              let gapOrOverlapCount = 0;
+              for (let i = 0; i < refinedTimeline.length; i++) {
+                if (refinedTimeline[i].duration <= 0) invalidDurationCount++;
+                if (i > 0 && refinedTimeline[i].newStart < refinedTimeline[i - 1].newStart + refinedTimeline[i - 1].duration) gapOrOverlapCount++;
+              }
+
+              writeFileSync(
+                resolve(cpTmp, "debug-refined-finalsegments.json"),
+                JSON.stringify({
+                  generatedAt: new Date().toISOString(),
+                  count: rtKept.length,
+                  droppedCount: rtDropped.length,
+                  invalidDurationCount,
+                  gapOrOverlapCount,
+                  refinedTimelineDurationInFrames: refinedDurationInFrames,
+                  segments: rtKept,
+                  dropped: rtDropped,
+                }, null, 2),
+                { encoding: "utf8" }
+              );
+              const allRtLines = [
+                ...rtKept.map(s => `${s.id}: ${s.originalStart}-${s.originalEnd} -> ${s.refinedStart}-${s.refinedEnd} dur=${s.duration} dropped=false | ${s.text}`),
+                ...rtDropped.map(s => `${s.id}: ${s.originalStart}-${s.originalEnd} -> DROPPED | ${s.text}`),
+              ].sort((a, b) => parseInt(a) - parseInt(b));
+              writeFileSync(resolve(cpTmp, "debug-refined-finalsegments.txt"), allRtLines.join("\n"), { encoding: "utf8" });
+              console.log(`[DEBUG] refined-finalsegments: ${rtKept.length} kept, ${rtDropped.length} dropped`);
+
+              // --- dry-run: refined-finalsegments-v2 (direct from refinedTimeline) ---
+              try {
+                const lastIdx = refinedTimeline.length - 1;
+                let v2Cursor = 0;
+                const v2Segments: any[] = refinedTimeline.map((entry: any, idx: number) => {
+                  const isFirst = idx === 0;
+                  const isLast  = idx === lastIdx;
+                  const isEmph  = !isFirst && !isLast && idx % 10 === 0;
+                  const type      = isFirst ? "hook" : isLast ? "conclusion" : isEmph ? "emphasis" : "normal";
+                  const animation = isFirst ? "pop" : isLast ? "reveal" : "pop";
+                  const se        = isFirst ? "pikon" : isEmph ? "chan" : undefined;
+                  const start = v2Cursor;
+                  const end   = v2Cursor + entry.duration;
+                  v2Cursor = end;
+                  return {
+                    id: idx + 1,
+                    sourceIndex: entry.index,
+                    sourceIndexes: entry.sourceIndexes,
+                    type,
+                    start,
+                    end,
+                    text: (entry.text || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").slice(0, 80),
+                    animation,
+                    position: "bottom",
+                    zoom: 1.0,
+                    ...(se !== undefined ? { se } : {}),
+                  };
+                });
+
+                let v2EmptyTextCount = 0;
+                let v2InvalidDurationCount = 0;
+                let v2OverlapCount = 0;
+                for (let i = 0; i < v2Segments.length; i++) {
+                  const s = v2Segments[i];
+                  if (!s.text || s.text.trim() === "") v2EmptyTextCount++;
+                  if (s.end - s.start <= 0) v2InvalidDurationCount++;
+                  if (i > 0 && s.start < v2Segments[i - 1].end) v2OverlapCount++;
+                }
+                const v2LastEnd = v2Cursor;
+
+                writeFileSync(
+                  resolve(cpTmp, "debug-refined-finalsegments-v2.json"),
+                  JSON.stringify({
+                    generatedAt: new Date().toISOString(),
+                    count: v2Segments.length,
+                    droppedCount: 0,
+                    emptyTextCount: v2EmptyTextCount,
+                    invalidDurationCount: v2InvalidDurationCount,
+                    overlapCount: v2OverlapCount,
+                    lastEnd: v2LastEnd,
+                    refinedTimelineDurationInFrames: refinedDurationInFrames,
+                    lastEndMatchesDuration: v2LastEnd === refinedDurationInFrames,
+                    segments: v2Segments,
+                  }, null, 2),
+                  { encoding: "utf8" }
+                );
+                const v2TxtLines = v2Segments.map((s: any) =>
+                  `${s.id}: ${s.start}-${s.end} dur=${s.end - s.start} type=${s.type} | ${s.text}`
+                );
+                writeFileSync(resolve(cpTmp, "debug-refined-finalsegments-v2.txt"), v2TxtLines.join("\n"), { encoding: "utf8" });
+                console.log(`[DEBUG] refined-finalsegments-v2: ${v2Segments.length} segments, lastEndMatchesDuration=${v2LastEnd === refinedDurationInFrames}`);
+
+                // --- diff: old dropped vs v2 ---
+                const diffLines: string[] = [
+                  `=== refined-finalsegments diff ===`,
+                  `旧方式 kept=${rtKept.length} dropped=${rtDropped.length}`,
+                  `v2方式 count=${v2Segments.length} dropped=0`,
+                  ``,
+                  `--- 旧方式でDROPされた字幕 ---`,
+                  ...rtDropped.map((d: any) => `  DROP id=${d.id}: "${d.text}" (originalStart=${d.originalStart}-${d.originalEnd})`),
+                  ``,
+                  `--- v2の全segment ---`,
+                  ...v2Segments.map((s: any) => `  id=${s.id} [${s.type}] start=${s.start}-${s.end} src=${s.sourceIndex} | "${s.text}"`),
+                ];
+                writeFileSync(resolve(cpTmp, "debug-refined-finalsegments-diff.txt"), diffLines.join("\n"), { encoding: "utf8" });
+                console.log(`[DEBUG] refined-finalsegments-diff written`);
+              } catch (v2Err) {
+                console.error("[DEBUG] refined-finalsegments-v2 error:", (v2Err as Error).message);
+              }
+              // --- end dry-run: refined-finalsegments-v2 ---
+
+            } catch (rtFsErr) {
+              console.error("[DEBUG] refined-finalsegments error:", (rtFsErr as Error).message);
+            }
+            // --- end dry-run: refined-finalsegments ---
 
           } catch (refinedErr) {
             console.error("[DEBUG] cut-proposal-refined error:", (refinedErr as Error).message);
