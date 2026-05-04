@@ -315,18 +315,49 @@ ${JSON.stringify(sentenceCandidates, null, 2)}
         let sllmDecisionsRaw: any[] = [];
         try { sllmDecisionsRaw = JSON.parse(sllmCleaned); } catch { sllmDecisionsRaw = []; }
 
-        const sllmDecisionsClean = sllmDecisionsRaw.map((d: any) => ({ index: d.index, decision: d.decision }));
+        // --- auto_keep_contrast_pair correction ---
+        const CONTRAST_MARKERS = ["一方", "一方で", "対して", "反対に"];
+        const decisionMap = new Map<number, any>(sllmDecisionsRaw.map((d: any) => [d.index, d]));
+        const contrastCorrections: any[] = [];
+        for (let ci = 1; ci < allSegments.length; ci++) {
+          const segI = allSegments[ci];
+          const textI = (segI?.text || "").replace(/[\r\n\t]+/g, " ").trim();
+          if (!CONTRAST_MARKERS.some(m => textI.includes(m))) continue;
+          const decI = decisionMap.get(ci)?.decision ?? "keep";
+          if (decI !== "keep") continue;
+          const prevDec = decisionMap.get(ci - 1);
+          if (!prevDec) continue;
+          if (prevDec.decision !== "drop" && prevDec.decision !== "merge_next") continue;
+          const textPrev = (allSegments[ci - 1]?.text || "").replace(/[\r\n\t]+/g, " ").trim();
+          if (!textPrev) continue;
+          if (textPrev === textI) continue;
+          const from = prevDec.decision;
+          prevDec.decision = "keep";
+          prevDec.note = "auto_keep_contrast_pair";
+          contrastCorrections.push({ index: ci - 1, from, to: "keep", reason: "auto_keep_contrast_pair", triggerIndex: ci });
+        }
+        if (contrastCorrections.length > 0) {
+          console.log(`[DEBUG] auto_keep_contrast_pair: ${contrastCorrections.length} correction(s)`, JSON.stringify(contrastCorrections));
+        }
+        // --- end auto_keep_contrast_pair ---
+
+        const sllmDecisionsClean = sllmDecisionsRaw.map((d: any) => {
+          const entry: any = { index: d.index, decision: d.decision };
+          if (d.note) entry.note = d.note;
+          return entry;
+        });
         const sllmTmpDir = resolve(process.cwd(), "tmp");
         mkdirSync(sllmTmpDir, { recursive: true });
         writeFileSync(
           resolve(sllmTmpDir, "debug-sentence-llm-decisions.json"),
-          JSON.stringify({ generatedAt: new Date().toISOString(), decisions: sllmDecisionsClean }, null, 2),
+          JSON.stringify({ generatedAt: new Date().toISOString(), decisions: sllmDecisionsClean, corrections: contrastCorrections }, null, 2),
           { encoding: "utf8" }
         );
         const sanitize2 = (s: string) => (s || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").slice(0, 120);
         const sllmTxtLines = sllmDecisionsRaw.map((d: any) => {
           const cand = sentenceCandidates.find((c: any) => c.index === d.index);
-          return `${d.index} [${d.decision}] ${sanitize2(d.reason || "")} | ${cand?.text || ""}`;
+          const noteStr = d.note ? ` [${d.note}]` : "";
+          return `${d.index} [${d.decision}]${noteStr} ${sanitize2(d.reason || "")} | ${cand?.text || ""}`;
         });
         writeFileSync(resolve(sllmTmpDir, "debug-sentence-llm-decisions.txt"), sllmTxtLines.join("\n"), { encoding: "utf8" });
         console.log("[DEBUG] sentence LLM decisions saved.");
